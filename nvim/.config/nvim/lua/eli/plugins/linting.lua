@@ -13,7 +13,8 @@ lint.linters_by_ft = linters_by_ft
 
 local lint_augroup = vim.api.nvim_create_augroup("eli.lint", { clear = true })
 
-vim.api.nvim_create_autocmd({ "BufEnter", "BufWritePost", "InsertLeave" }, {
+-- BufReadPost (not BufEnter) lints once on open instead of on every buffer switch
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost", "InsertLeave" }, {
 	group = lint_augroup,
 	desc = "Run configured linters for current buffer",
 	callback = function()

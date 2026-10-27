@@ -4,6 +4,7 @@
 - Leader: `<Space>`
 - Scope notes:
   - `LSP` maps are buffer-local and appear when an LSP attaches.
+  - `Git` maps are buffer-local and appear only in files tracked by a git repo.
   - Text-file wrap maps (`j`/`k`) are buffer-local in `text` ftplugin.
   - Normal yank/paste uses the system clipboard because `clipboard` includes `unnamedplus`.
 
@@ -29,6 +30,13 @@
 │   ├── l   move right
 │   ├── v   split vertically
 │   └── s   split horizontally
+├── g  (git)
+│   ├── p   preview hunk
+│   ├── s   stage/unstage hunk (or selected lines)
+│   ├── r   reset hunk (or selected lines)
+│   ├── S   stage whole buffer
+│   ├── b   blame line
+│   └── d   diff against index
 ├── d  (diagnostics)
 │   ├── d   line diagnostics float
 │   ├── b   buffer diagnostics list (fzf)
@@ -62,6 +70,12 @@
 | `<leader>wl` | Move to right window | `lua/eli/core/keymaps.lua` |
 | `<leader>wv` | Vertical split | `lua/eli/core/keymaps.lua` |
 | `<leader>ws` | Horizontal split | `lua/eli/core/keymaps.lua` |
+| `<leader>gp` | Preview hunk | `lua/eli/plugins/gitsigns.lua` |
+| `<leader>gs` | Stage/unstage hunk (Visual: selected lines) | `lua/eli/plugins/gitsigns.lua` |
+| `<leader>gr` | Reset hunk (Visual: selected lines) | `lua/eli/plugins/gitsigns.lua` |
+| `<leader>gS` | Stage whole buffer | `lua/eli/plugins/gitsigns.lua` |
+| `<leader>gb` | Blame current line | `lua/eli/plugins/gitsigns.lua` |
+| `<leader>gd` | Diff buffer against index | `lua/eli/plugins/gitsigns.lua` |
 | `<leader>dd` | Show line diagnostics | `lua/eli/plugins/lspconfig.lua` |
 | `<leader>db` | Buffer diagnostics list (fzf) | `lua/eli/plugins/fzf-lua.lua` |
 | `<leader>dw` | Workspace diagnostics list (fzf) | `lua/eli/plugins/fzf-lua.lua` |
@@ -86,6 +100,23 @@
 | `gt` | Show type definitions (fzf) |
 | `K` | Hover docs |
 | `<C-k>` (insert) | Signature help |
+
+### Git hunks (buffer-local in git-tracked files)
+
+| Key | Mode | Action |
+|---|---|---|
+| `]h` | Normal | Jump to next hunk |
+| `[h` | Normal | Jump to previous hunk |
+| `ih` | Operator/Visual | Text object for the hunk under the cursor (e.g. `vih`, `dih`, `yih`) |
+
+### Completion and snippets (insert mode)
+
+| Key | Action |
+|---|---|
+| `<C-Space>` | Show / hide completion menu |
+| `<C-n>` / `<C-p>` | Select next / previous item |
+| `<C-y>` | Accept selected item |
+| `<Tab>` / `<S-Tab>` | Jump to next / previous snippet placeholder (normal `<Tab>` otherwise) |
 
 ### Search and movement quality-of-life
 
@@ -282,12 +313,76 @@ Register types:
 4. `<leader>dd` for diagnostics on cursor
 5. `:q` to close help or splits when done
 
+## Git Workflow (gitsigns)
+
+### Reading the sign column
+
+In any file inside a git repo, the left column shows what changed since the last commit:
+
+| Sign | Meaning |
+|---|---|
+| `┃` (green) | Added lines |
+| `┃` (blue) | Changed lines |
+| `▁` / `▔` (red) | Lines were deleted below / above here |
+| `~` | Lines changed and some deleted |
+| `┆` | File is not tracked by git yet |
+
+Staged hunks keep the same symbol but turn a dimmer shade.
+
+A **hunk** is one contiguous block of changes, i.e. one group of signs. Most git maps act on the hunk under the cursor.
+
+### Review your changes before committing
+
+1. `]h` → jump to the first change
+2. `<leader>gp` → preview it (floating window shows old vs. new lines)
+3. Decide:
+   - keep it for the commit → `<leader>gs` (stage; the sign dims)
+   - throw it away → `<leader>gr` (reset back to the committed version)
+   - staged by mistake → `<leader>gs` again on the staged hunk unstages it
+4. `]h` → next change, repeat
+5. Commit from the terminal as usual (`git commit`); only staged hunks are included
+
+### Stage only part of a hunk
+
+1. `V` and select the lines you want
+2. `<leader>gs` → stages only those lines
+
+`<leader>gr` works the same way in Visual mode to reset just the selected lines.
+
+### Who wrote this line, and why?
+
+- `<leader>gb` → popup with author, date, and full commit message for the line under the cursor
+
+### See everything at once
+
+- `<leader>gd` → opens a side-by-side diff of the file against the index (what is staged). Close the extra window with `:q`.
+
+### Hunk as a text object
+
+`ih` works like `iw` or `ip`, but for the current hunk:
+- `vih` → select the whole change
+- `yih` → copy it
+- `dih` → delete it
+
+### Git practice drill (3 minutes)
+
+In this dotfiles repo:
+
+1. Open any tracked file, add a line at the top and change a line further down. Watch the signs appear.
+2. `gg` then `]h` → cursor jumps to your first change; `]h` again → the second one.
+3. `<leader>gp` → preview the change.
+4. `<leader>gs` → stage it; in a terminal, `git diff --staged` shows only that hunk.
+5. `<leader>gs` again → unstaged.
+6. `<leader>gr` on both hunks → the file is back to its committed version.
+7. `<leader>gb` on any line → see who last changed it.
+
 ## Learning Path (Quick)
 
 1. Drill windows: `<leader>w{h,j,k,l,v,s}`
 2. Drill diagnostics: `<leader>d{d,b,w}`
 3. Drill LSP actions: `<leader>l{a,r,R,i}`
 4. Keep find keys daily: `<leader>f{f,g,b,h,e}`
+5. Drill git review: `]h`, `<leader>g{p,s,r}`
 
 ## Helpful Introspection Commands
 
@@ -296,9 +391,11 @@ Register types:
 :nmap <leader>w
 :nmap <leader>d
 :nmap <leader>l
+:nmap <leader>g
 :verbose map <leader>dd
 :autocmd eli.core.checktime
 :autocmd eli.core.yank
+:autocmd eli.lint
 :checktime
 ```
 

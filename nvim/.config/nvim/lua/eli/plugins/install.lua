@@ -7,6 +7,7 @@ vim.pack.add({
 		build = ":TSUpdate",
 	},
 	"https://github.com/mason-org/mason.nvim",
+	"https://github.com/WhoIsSethDaniel/mason-tool-installer.nvim",
 	"https://github.com/neovim/nvim-lspconfig",
 	"https://github.com/folke/which-key.nvim",
 	"https://github.com/stevearc/conform.nvim",
@@ -21,5 +22,7 @@ vim.pack.add({
 	"https://github.com/nvim-lualine/lualine.nvim",
 	"https://github.com/nvim-tree/nvim-web-devicons",
 	"https://github.com/meuter/lualine-so-fancy.nvim",
+	"https://github.com/lewis6991/gitsigns.nvim",
+	"https://github.com/folke/lazydev.nvim",
 })
 

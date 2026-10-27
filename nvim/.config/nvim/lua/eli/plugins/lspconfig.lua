@@ -6,29 +6,8 @@ vim.diagnostic.config({
       [vim.diagnostic.severity.INFO] = "󰋼 ",
       [vim.diagnostic.severity.HINT] = "󰌵 ",
     },
-    texthl = {
-      [vim.diagnostic.severity.ERROR] = "Error",
-      [vim.diagnostic.severity.WARN] = "Error",
-      [vim.diagnostic.severity.HINT] = "Hint",
-      [vim.diagnostic.severity.INFO] = "Info",
-    },
-    numhl = {
-      [vim.diagnostic.severity.ERROR] = "",
-      [vim.diagnostic.severity.WARN] = "",
-      [vim.diagnostic.severity.HINT] = "",
-      [vim.diagnostic.severity.INFO] = "",
-    },
   },
 })
-
-do
-	local orig = vim.lsp.util.open_floating_preview
-	function vim.lsp.util.open_floating_preview(contents, syntax, opts, ...)
-		opts = opts or {}
-		opts.border = opts.border or "rounded"
-		return orig(contents, syntax, opts, ...)
-	end
-end
 
 local augroup = vim.api.nvim_create_augroup("eli.lsp.attach", { clear = true })
 
