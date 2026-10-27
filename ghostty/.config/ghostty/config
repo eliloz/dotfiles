@@ -1,0 +1,9 @@
+font-family = MesloLGS Nerd Font Mono
+font-size = 18
+
+background-opacity = 0.92
+background-blur-radius = 20
+
+cursor-style = block
+cursor-style-blink = false
+shell-integration-features = no-cursor

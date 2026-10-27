@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Secrets / machine-local overrides — never commit
+*.local
+.env
+.env.*
+*.pem
+*.key
+id_*
+.netrc
+
+# Editor/runtime state
+*.swp
+*~
+.zsh_history
+.zcompdump*
