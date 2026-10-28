@@ -10,6 +10,13 @@ fi
 eval "$(/opt/homebrew/bin/brew shellenv)"
 
 
+# ---------- PATH ----------
+
+# User scripts (stowed from dotfiles/scripts) and uv tools. typeset -U drops duplicate entries.
+typeset -U path
+path=("$HOME/.local/bin" $path)
+
+
 # ---------- History ----------
 
 HISTFILE="$HOME/.zsh_history"

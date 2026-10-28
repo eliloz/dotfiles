@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf 'dev: %s\n' "$*" >&2; exit 1; }
+command -v git >/dev/null || fail 'git is required'
+command -v tmux >/dev/null || fail 'tmux is required'
+command -v nvim >/dev/null || fail 'nvim is required'
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || fail 'run dev inside a Git repository'
+# Resolve linked worktrees to the main checkout, so every worktree maps to the same session.
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+if [[ "$common" == */.git ]]; then
+  main_root=${common%/.git}
+else
+  main_root=$root
+fi
+project=$(basename "$main_root")
+# A stable path-derived suffix prevents similarly named repositories from colliding.
+hash=$(printf '%s' "$main_root" | git hash-object --stdin | cut -c1-8)
+session="${project//[^[:alnum:]_-]/_}-$hash"
+
+if ! tmux has-session -t "=$session" 2>/dev/null; then
+  tmux new-session -d -s "$session" -n editor -c "$main_root" 'nvim .'
+  tmux new-window -d -t "=$session" -n terminal -c "$main_root"
+  tmux select-window -t "=$session:editor"
+fi
+
+if [[ -n "${TMUX:-}" ]]; then
+  tmux switch-client -t "=$session"
+else
+  exec tmux attach-session -t "=$session"
+fi

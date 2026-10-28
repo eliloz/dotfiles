@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() { printf 'wt: %s\n' "$*" >&2; exit 1; }
+usage() {
+  cat <<'HELP'
+Usage:
+  wt <task> [--agent claude|pi]   Create if absent, then open
+  wt new <task> [--agent claude|pi]  Create only
+  wt open <task> [--agent claude|pi] Open only
+  wt list                         List repository worktrees
+  wt config                       Show effective project configuration
+  wt remove <task>                Remove worktree safely; branch is kept
+
+New branches start from the local default branch (main or master), whatever
+the main checkout has checked out. Run git pull there first.
+
+Run inside any worktree of the project; opening requires a tmux client.
+Set WT_ROOT for the worktree base (default: sibling 'worktrees' folder).
+HELP
+}
+# Local default branch: named by origin/HEAD when set, else main, else master.
+default_base() {
+  local name
+  if name=$(git -C "$main_root" symbolic-ref --quiet --short refs/remotes/origin/HEAD); then
+    name=${name#origin/}
+    git -C "$main_root" show-ref --verify --quiet "refs/heads/$name" && { printf '%s\n' "$name"; return; }
+  fi
+  for name in main master; do
+    git -C "$main_root" show-ref --verify --quiet "refs/heads/$name" && { printf '%s\n' "$name"; return; }
+  done
+  fail "can't find a local main or master branch"
+}
+[[ $# -gt 0 ]] || { usage; exit 2; }
+command -v git >/dev/null || fail 'git is required'
+root=$(git rev-parse --show-toplevel 2>/dev/null) || fail 'run inside a Git repository'
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+if [[ "$common" == */.git ]]; then main_root=${common%/.git}; else fail 'bare/unusual Git layouts are not supported'; fi
+project=$(basename "$main_root")
+# WT_ROOT is preferred; WT_BASE_DIR is accepted for compatibility.
+base=${WT_ROOT:-${WT_BASE_DIR:-"$(dirname "$main_root")/worktrees"}}
+[[ -n "$base" ]] || fail 'WT_ROOT must not be empty'
+# Expand leading ~/ for convenience; require absolute paths for predictable behavior.
+if [[ "$base" == '~/'* ]]; then base="$HOME/${base#\~/}"; fi
+[[ "$base" == /* ]] || fail 'WT_ROOT must be an absolute path'
+base=${base%/}
+[[ -n "$base" ]] || base=/
+parent="$base/$project"
+hash=$(printf '%s' "$main_root" | git hash-object --stdin | cut -c1-8)
+session="${project//[^[:alnum:]_-]/_}-$hash"
+
+op=ensure
+case "$1" in
+  list|config|remove|new|open) op=$1; shift ;;
+  -h|--help|help) usage; exit 0 ;;
+esac
+
+if [[ "$op" == config ]]; then
+  [[ $# -eq 0 ]] || fail 'config takes no arguments'
+  printf 'Project:       %s\nWorktree root: %s\nTask directory: %s\nDefault agent: claude\nSession:       %s\n' \
+    "$main_root" "$base" "$parent" "$session"
+  exit 0
+fi
+
+if [[ "$op" == list ]]; then
+  [[ $# -eq 0 ]] || fail 'list takes no arguments'
+  git -C "$main_root" worktree list
+  exit 0
+fi
+
+[[ $# -gt 0 ]] || fail 'missing task name'
+task=$1; shift
+# Keep task names single path components and safe as branch suffixes.
+[[ "$task" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]] || fail 'task must use letters, numbers, _ or - and start with a letter or number'
+agent=claude
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --agent) [[ $# -ge 2 ]] || fail '--agent requires a value'; agent=$2; shift 2 ;;
+    *) fail "unknown argument: $1" ;;
+  esac
+done
+[[ "$agent" == claude || "$agent" == pi ]] || fail 'agent must be claude or pi'
+path="$parent/$task"
+branch="feature/$task"
+
+# Check registration using Git's machine-readable worktree list; paths are one per line.
+registered=0
+while IFS= read -r line; do
+  if [[ "$line" == "worktree $path" ]]; then registered=1; break; fi
+done < <(git -C "$main_root" worktree list --porcelain)
+
+if [[ "$op" == remove ]]; then
+  [[ "$registered" == 1 ]] || fail "not a registered worktree: $path"
+  [[ "$path" != "$main_root" ]] || fail 'refusing to remove primary checkout'
+  # Git refuses removal with modifications or untracked files. Avoid closing an active pane prematurely.
+  [[ -z "$(git -C "$path" status --porcelain --untracked-files=all)" ]] || fail 'worktree has uncommitted/untracked files; commit or clean them first'
+  actual_branch=$(git -C "$path" symbolic-ref --quiet --short HEAD) || fail 'detached HEAD; inspect manually'
+  [[ "$actual_branch" == "$branch" ]] || fail "unexpected branch $actual_branch (expected $branch)"
+  # Refuse if the active window is still running. User can close it first.
+  if command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null; then
+    while IFS=$'\t' read -r win_id win_name; do
+      if [[ "$win_name" == "wt:$task" ]]; then
+        fail "tmux window $win_id is still open; close it first (Ctrl-b &), then retry"
+      fi
+    done < <(tmux list-windows -t "=$session" -F $'#{window_id}\t#{window_name}')
+  fi
+  printf 'Remove worktree %s? Branch %s will be kept. [y/N] ' "$path" "$branch" >&2
+  read -r answer || exit 1
+  [[ "$answer" == y || "$answer" == Y || "$answer" == yes ]] || { echo 'Cancelled.'; exit 0; }
+  git -C "$main_root" worktree remove "$path"
+  rmdir "$parent" 2>/dev/null || true
+  # Remote first: while origin/<branch> exists, `branch -d` checks against it instead of HEAD.
+  printf 'Removed %s. Branch %s was kept; when done with it:\n' "$path" "$branch"
+  printf '  git push origin --delete %s   (if pushed)\n  git branch -d %s\n' "$branch" "$branch"
+  exit 0
+fi
+
+if [[ "$op" == new && "$registered" == 1 ]]; then fail "already exists: $path"; fi
+if [[ "$op" == open && "$registered" == 0 ]]; then fail "worktree not found: $path"; fi
+if [[ "$registered" == 0 ]]; then
+  [[ ! -e "$path" && ! -L "$path" ]] || fail "path exists but is not registered: $path"
+  git -C "$main_root" check-ref-format --branch "$branch" >/dev/null || fail "invalid branch: $branch"
+  if git -C "$main_root" show-ref --verify --quiet "refs/heads/$branch"; then
+    fail "branch $branch already exists; use git worktree add '$path' '$branch' manually if you want to reuse it"
+  fi
+  base_ref=$(default_base)
+  mkdir -p "$parent"
+  # Name the base explicitly so the main checkout's current branch does not matter.
+  git -C "$main_root" worktree add --quiet -b "$branch" "$path" "$base_ref"
+  printf 'Created %s from %s @ %s\n' "$branch" "$base_ref" "$(git -C "$path" rev-parse --short HEAD)"
+fi
+
+# `new` is intentionally create-only; no tmux or agent process is launched.
+if [[ "$op" == new ]]; then
+  printf 'Worktree: %s\n' "$path"
+  exit 0
+fi
+
+[[ -n "${TMUX:-}" ]] || fail 'worktree is ready; run wt from inside tmux to open its editor/agent window'
+command -v tmux >/dev/null || fail 'tmux is required'
+command -v nvim >/dev/null || fail 'nvim is required'
+command -v "$agent" >/dev/null || fail "$agent is not installed or not in PATH"
+# Attach to the project's session if invoked from another project session.
+if ! tmux has-session -t "=$session" 2>/dev/null; then
+  tmux new-session -d -s "$session" -n editor -c "$main_root" 'nvim .'
+  tmux new-window -d -t "=$session" -n terminal -c "$main_root"
+fi
+window_id=''
+while IFS=$'\t' read -r id name; do
+  if [[ "$name" == "wt:$task" ]]; then window_id=$id; break; fi
+done < <(tmux list-windows -t "=$session" -F $'#{window_id}\t#{window_name}')
+if [[ -z "$window_id" ]]; then
+  window_id=$(tmux new-window -d -P -F '#{window_id}' -t "=$session" -n "wt:$task" -c "$path" 'nvim .')
+  tmux split-window -d -h -t "$window_id" -c "$path" "$agent"
+  tmux select-layout -t "$window_id" even-horizontal >/dev/null
+fi
+# Switch to the project session first, then select its task window.
+tmux switch-client -t "=$session"
+tmux select-window -t "$window_id"

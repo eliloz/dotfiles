@@ -3,6 +3,7 @@
 
 # Secrets / machine-local overrides — never commit
 *.local
+!/scripts/.local/
 .env
 .env.*
 *.pem
