@@ -18,6 +18,13 @@ vim.opt.shiftwidth = 2
 vim.opt.expandtab = true
 vim.opt.smartindent = true
 
+-- Match Black: one indent level inside brackets, closing bracket dedents
+vim.g.python_indent = {
+	open_paren = "shiftwidth()",
+	continue = "shiftwidth()",
+	closed_paren_align_last_line = false,
+}
+
 vim.opt.ignorecase = true
 vim.opt.smartcase = true
 
