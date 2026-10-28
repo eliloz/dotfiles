@@ -18,7 +18,6 @@ require("mason-tool-installer").setup({
 		"stylua",
 		-- Linters
 		"eslint_d",
-		-- Python tools live outside Mason so they don't depend on whichever python3 is on PATH:
-		--   uv tool install --managed-python pylint black isort
+		"ruff",
 	},
 })

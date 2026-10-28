@@ -82,7 +82,7 @@ vim.lsp.config("*", {
   - `BufReadPost` → once when a file is opened
   - `BufWritePost` → after every save
   - `InsertLeave` → when you leave insert mode
-- It deliberately does **not** run on `BufEnter`, so switching between open buffers stays fast even with slow linters like `pylint`.
+- It deliberately does **not** run on `BufEnter`, so switching between open buffers stays fast even with slower linters.
 - Results show up as normal diagnostics: signs in the sign column, `<leader>dd` for details on the current line, `<leader>db` / `<leader>dw` for lists.
 - Run on demand: `:lua require("lint").try_lint()`.
 
