@@ -1,6 +1,6 @@
-# dev + wt
+# dev + box
 
-A small Bash CLI for Git-project tmux sessions and isolated agent worktrees.
+A small Bash CLI for Git-project tmux sessions and sandboxed agent tasks.
 
 ## Layout
 
@@ -8,7 +8,9 @@ This is a [GNU Stow](https://www.gnu.org/software/stow/) package. The scripts li
 
 ## Requirements
 
-macOS or Linux, Bash, Git, tmux, Neovim, and Claude Code (or Pi for `--agent pi`). `dev` and `wt` are standalone executable scripts; they do not require tmuxinator.
+macOS or Linux, Bash, Git, tmux, Neovim with [diffview.nvim](https://github.com/sindrets/diffview.nvim) (installed by the tracked nvim config), jq, and [Docker Sandboxes](https://docs.docker.com/ai/sandboxes/) (`sbx`). `dev` and `box` are standalone executable scripts; they do not require tmuxinator.
+
+Store the agent's credentials with sbx, not in the sandbox: `claude login` OAuth shows up as `anthropic (oauth configured)` in `sbx secret ls`. Keep other service secrets (GitHub especially) out of global scope; sbx's proxy authenticates every sandbox's requests with them.
 
 ## Install
 
@@ -26,82 +28,78 @@ After adding a new script to `scripts/.local/bin/`, re-stow to link it:
 stow -R --no-folding scripts
 ```
 
-`~/.local/bin` is added to `PATH` by the tracked `zsh/.zshrc`. Optionally configure a machine-specific root in `~/.zshrc.local`:
+`~/.local/bin` is added to `PATH` by the tracked `zsh/.zshrc`. Optionally size new sandboxes in `~/.zshrc.local`:
 
 ```bash
-export WT_ROOT="$HOME/code/worktrees"
+export BOX_CPUS=4 BOX_MEMORY=8g    # the defaults
 ```
 
-If `WT_ROOT` is unset, the default is a `worktrees` directory alongside your primary checkout's parent directory. `WT_BASE_DIR` is a legacy fallback.
+## How box works
+
+Each task gets its own sandbox (`sbx create --clone`): a private clone of the repository inside the sandbox, on branch `feature/<task>` started from the local default branch. Your repository is mounted into it read-only. The agent edits, runs tests and commits freely in there, with no permission prompts.
+
+Its commits come back by `git fetch` from a `sandbox-<name>` remote that sbx adds to your repository while the sandbox runs. Fetched branches are also mirrored into `refs/sandboxes/<name>/*`, which survive the sandbox stopping or being removed. Nothing the agent does reaches your checkout until you `box merge`.
 
 ## Commands
 
 | Command | Action |
 |---|---|
 | `dev` | Create or switch to a project tmux session with editor and terminal windows |
-| `wt config` | Print project, worktree root, and tmux session settings |
-| `wt list` | Show registered Git worktrees |
-| `wt new gateway` | Create a branch and worktree **without launching tmux or Claude** |
-| `wt open gateway` | Open an existing worktree with Neovim and Claude side by side |
-| `wt gateway` | Create if missing, then open; repeat to return to the existing task window |
-| `wt gateway --agent pi` | Use Pi for a newly opened task window |
-| `wt remove gateway` | Remove clean worktree directory; **keep** branch and print cleanup commands |
+| `box ratelimit` | Create the sandbox if missing, then open its agent window `box:ratelimit` |
+| `box new ratelimit` | Create the sandbox **without opening a window** |
+| `box open ratelimit` | Open (or restart) the agent window |
+| `box ratelimit --agent codex` | Use another sbx agent for a new sandbox |
+| `box review ratelimit` | Fetch, then open a diffview of the agent's commits above the agent |
+| `Ctrl-a R` | Same as `box review` for the current `box:<task>` window |
+| `box merge ratelimit` | Merge the reviewed commits into the default branch (`--squash` to squash) |
+| `box list` | Show this project's sandboxes and their unmerged commit counts |
+| `box config` | Print project, session and sandbox settings |
+| `box remove ratelimit` | Fetch, then delete the sandbox |
 
-The `wt` commands must be run inside a Git repository (including one of its linked worktrees). `wt new`, `wt list`, `wt config`, and `wt remove` do not require an active tmux client. Opening a task requires an active tmux client.
+Run `box` inside the project (main checkout or any worktree). Opening and reviewing need an active tmux client. Task names are lowercase letters, numbers, `_` and `-`.
 
 ## Example lifecycle
 
 ```bash
 cd ~/code/project
-git pull                    # wt branches from local main, so update it first
+git pull                    # box branches from local main, so update it first
 dev                         # creates/attaches tmux project session
-wt gateway                  # creates feature/gateway from main, opens task window
-# ... edit, test, commit in the gateway worktree ...
-git push -u origin feature/gateway   # first push sets the upstream; then plain git push
+box ratelimit               # sandbox + window box:ratelimit with Claude
+# Give the agent its task; ask it for small commits.
+# About 5s after Claude finishes or needs input, it rings the terminal bell: if you're in another
+# window, its status-bar entry turns red with a ! (e.g. 2:box:ratelimit!) until you visit it.
 
-cd ~/code/project           # main checkout, on main
-git merge feature/gateway
+box review ratelimit        # or Ctrl-a R in the agent window
+# diffview opens full width above the agent: Tab/S-Tab between files, ]c/[c between changes.
+# Ctrl-a m zooms either pane. :qa closes the diff; reply to the agent and review again as needed.
+
+box merge ratelimit         # from anywhere in the project; main checkout must be on main and clean
+uv run pytest               # first time the agent's code runs on the host
 git push
 
-# Close the gateway tmux window (Ctrl-b &) before removal.
-wt remove gateway
-git push origin --delete feature/gateway   # remote first...
-git branch -d feature/gateway              # ...so -d checks against main, not the old remote copy
+# Exit the agent and let its window close (or Ctrl-a &).
+box remove ratelimit
 ```
-
-Or create without opening:
-
-```bash
-wt new sdk
-wt open sdk
-```
-
-Worktrees are created under `$WT_ROOT/<project>/<task>` and branches are named `feature/<task>`. Git shares history and objects between worktrees, but each worktree has its own checked-out files. `git worktree remove` deletes the task directory; the parent project directory is removed only if empty.
 
 ## Safety and behavior
 
-- Rejects invalid task names and existing unrelated directories.
-- Does not silently reuse an existing branch for a new task.
-- `wt new` refuses duplicate creation; `wt <task>` reuses registered worktrees.
-- Removal refuses dirty worktrees, including untracked files, and requires confirmation.
-- Removal refuses while the corresponding tmux task window exists; close it first.
-- Removal never deletes branches; `wt remove` prints the commands to delete the remote and local branch yourself.
-- Worktrees are **not** security sandboxes; Claude/Pi still run with their normal permissions.
-- This version expects conventional Git layouts with a `.git` directory in the primary checkout. Worktrees created elsewhere or moved after changing `WT_ROOT` are visible to `wt list`, but the named open/remove operations expect the configured path.
-- New branches start from the **local** default branch (named by `origin/HEAD` when set, else `main`, else `master`). What the main checkout has checked out does not matter. Nothing is fetched, so `git pull` first if `main` may have moved elsewhere.
-- New branches have no upstream until the first `git push -u origin feature/<task>`.
-- An already-running agent process is not automatically changed if you reopen its tmux window with a different `--agent` value.
+- The sandbox, not the agent's permission prompts, is the safety boundary. The agent cannot write your repository or anything else on the host; the host only runs its code after `box merge`.
+- Review before running anything on the host, especially changes to build and tool config: `pyproject.toml`/`uv.lock`, `package.json`, `Makefile`, `conftest.py`, `.pre-commit-config.yaml`, `.envrc`, `mise.toml`, `.nvim.lua`.
+- `box review` records the commit it showed you; `box merge` merges exactly that commit. Commits the agent made afterwards are reported and left for the next review.
+- After a merge, the next `box review` shows only the agent's newer commits.
+- `box remove` fetches first. If commits remain unmerged, it lists them and asks whether to keep them as a normal `feature/<task>` branch or discard them. Either way it deletes the `refs/sandboxes/<name>/*` copies sbx made of the clone's branches.
+- `box remove` refuses while the task's tmux window is open.
+- Run tests and dev servers inside the sandbox; publish a port with `sbx ports` to open an app in the host browser.
+- Each sandbox starts from the local default branch as it was at creation. Nothing is fetched, so `git pull` first. Inside, `origin` is your repository, so the agent can `git fetch origin` to pick up newer commits.
+- Reopening a closed window restarts the agent; the clone and its commits persist until `box remove`.
 
 ## Test before real work
 
 ```bash
-bash -n ~/.local/bin/dev ~/.local/bin/wt
+bash -n ~/.local/bin/dev ~/.local/bin/box
 cd /path/to/a/disposable/git/repo
-wt config
-wt new demo
-wt list
-wt remove demo
-# Optionally: git branch -d feature/demo (if safely merged)
+box config
+box new demo
+box list
+echo y | box remove demo
 ```
-
-These scripts require end-to-end testing with your local tmux/Neovim/Claude installation.
