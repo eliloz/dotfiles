@@ -23,6 +23,7 @@ vim.pack.add({
 	"https://github.com/nvim-tree/nvim-web-devicons",
 	"https://github.com/meuter/lualine-so-fancy.nvim",
 	"https://github.com/lewis6991/gitsigns.nvim",
+	"https://github.com/sindrets/diffview.nvim",
 	"https://github.com/folke/lazydev.nvim",
 })
 
