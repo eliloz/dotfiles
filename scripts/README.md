@@ -73,7 +73,7 @@ Its commits come back by `git fetch` from a `sandbox-<name>` remote that sbx add
 | `box new ratelimit` | Create the sandbox **without opening a window** |
 | `box open ratelimit` | Open (or restart) the agent window |
 | `box ratelimit --agent codex` | Use another sbx agent for a new sandbox |
-| `box review ratelimit` | Fetch, then open a diffview of the agent's commits above the agent |
+| `box review ratelimit` | Fetch, then open a diffview of the agent's commits in its own full-screen window `diff:ratelimit` |
 | `Ctrl-a R` | Same as `box review` for the current `box:<task>` window |
 | `box merge ratelimit` | Merge the reviewed commits into the default branch (`--squash` to squash) |
 | `box list` | Show this project's sandboxes and their unmerged commit counts |
@@ -94,8 +94,9 @@ box ratelimit               # sandbox + window box:ratelimit with Claude
 # window, its status-bar entry turns red with a ! (e.g. 2:box:ratelimit!) until you visit it.
 
 box review ratelimit        # or Ctrl-a R in the agent window
-# diffview opens full width above the agent: Tab/S-Tab between files, ]c/[c between changes.
-# Ctrl-a m zooms either pane. :qa closes the diff; reply to the agent and review again as needed.
+# diffview opens in its own full-screen window diff:ratelimit (Tab/S-Tab between files,
+# ]c/[c between changes); :qa closes it, then switch back to the agent window box:ratelimit.
+# Reply to the agent and review again as needed.
 
 box merge ratelimit         # from anywhere in the project; main checkout must be on main and clean
 uv run pytest               # first time the agent's code runs on the host

@@ -8,7 +8,7 @@ Usage:
   box <task> [--agent NAME]      Create sandbox if absent, then open its agent window
   box new <task> [--agent NAME]  Create sandbox only
   box open <task>                Open the agent window
-  box review <task>              Fetch the agent's commits and diff them above the agent
+  box review <task>              Fetch the agent's commits and diff them in their own tmux window
   box merge <task> [--squash]    Merge the reviewed commits into the default branch
   box list                       List this project's sandboxes
   box config                     Show effective project configuration
@@ -164,18 +164,16 @@ if [[ "$op" == review ]]; then
   # Record exactly what was shown so `box merge` merges that, not later commits.
   git -C "$main_root" update-ref "$reviewed" "$sha"
   window_id=$(ensure_window)
-  # Replace an earlier review pane instead of stacking another one. The diff goes on top at
-  # full width, since side-by-side diffs need width; the agent keeps a strip below for replies.
-  while IFS=$'\t' read -r pane_id is_review; do
-    [[ "$is_review" == 1 ]] && tmux kill-pane -t "$pane_id"
-  done < <(tmux list-panes -t "$window_id" -F $'#{pane_id}\t#{@box_review}')
-  pane_id=$(tmux split-window -P -F '#{pane_id}' -v -b -l 70% -t "$window_id" -c "$main_root" \
+  # The diff gets its own full-screen window: side-by-side diffs need the width and height that
+  # a split above the agent never had. Replace an earlier review window instead of stacking.
+  while IFS=$'\t' read -r id window_name; do
+    [[ "$window_name" == "diff:$task" ]] && tmux kill-window -t "$id"
+  done < <(tmux list-windows -t "=$session" -F $'#{window_id}\t#{window_name}')
+  review_id=$(tmux new-window -P -F '#{window_id}' -t "=$session" -n "diff:$task" -c "$main_root" \
     "nvim -c $(printf '%q' "DiffviewOpen $range")")
-  tmux set-option -p -t "$pane_id" @box_review 1
   tmux switch-client -t "=$session"
-  tmux select-window -t "$window_id"
-  tmux select-pane -t "$pane_id"
-  tmux display-message "box: reviewing $count commit(s) at ${sha:0:7}; approve with: box merge $task"
+  tmux select-window -t "$review_id"
+  tmux display-message "box: reviewing $count commit(s) at ${sha:0:7}; :qa closes the diff (agent is in box:$task); approve with: box merge $task"
   exit 0
 fi
 
@@ -215,6 +213,11 @@ if [[ "$op" == remove ]]; then
     && [[ "$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')" == "$window_id" ]]; then
     fail "run box remove from another window; this one (box:$task) will be closed"
   fi
+  # Same for the nvim review window, which remove also closes.
+  if [[ -n "${TMUX_PANE:-}" ]] && command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null \
+    && [[ "$(tmux display-message -p -t "$TMUX_PANE" '#{window_name}')" == "diff:$task" ]]; then
+    fail "run box remove from another window; this one (diff:$task) will be closed"
+  fi
   if [[ -n "$window_id" ]]; then
     printf 'Delete sandbox %s and close its window box:%s (stops the agent)? [y/N] ' "$name" "$task" >&2
   else
@@ -225,6 +228,11 @@ if [[ "$op" == remove ]]; then
   # Stop the agent before fetching, so its last commits are included. The sandbox keeps running;
   # if a later check fails, box open <task> reopens the window.
   if [[ -n "$window_id" ]]; then tmux kill-window -t "$window_id"; fi
+  if command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null; then
+    while IFS=$'\t' read -r id window_name; do
+      [[ "$window_name" == "diff:$task" ]] && tmux kill-window -t "$id"
+    done < <(tmux list-windows -t "=$session" -F $'#{window_id}\t#{window_name}')
+  fi
   # Fetch so the agent's last commits are in this repository before the sandbox goes.
   fetch_agent
   base_ref=$(default_base)
