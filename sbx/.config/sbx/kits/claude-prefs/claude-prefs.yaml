@@ -35,7 +35,8 @@ capabilities:
               (.context_window // {}) as $c
               | ($c.current_usage // {}) as $u
               | (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0)
-                 + ($u.cache_read_input_tokens // 0)) as $tok
+                 + ($u.cache_read_input_tokens // 0)
+                 + ($u.output_tokens // 0)) as $tok
               | ($c.used_percentage // 0 | floor) as $pct
               | (if $tok >= 1000 then (($tok / 100 | floor) / 10 | tostring) + "k"
                  else ($tok | tostring) end) as $len
