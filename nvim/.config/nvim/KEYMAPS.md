@@ -19,7 +19,7 @@
 │   ├── g   live grep
 │   ├── b   buffers
 │   ├── h   help tags
-│   └── e   file explorer toggle
+│   └── e   file explorer toggle (diffview: file panel)
 ├── b  (buffers)
 │   ├── n   next buffer
 │   └── p   previous buffer
@@ -61,7 +61,7 @@
 | `<leader>fg` | Live grep | `lua/eli/plugins/fzf-lua.lua` |
 | `<leader>fb` | Find buffers | `lua/eli/plugins/fzf-lua.lua` |
 | `<leader>fh` | Help tags (opens in vertical split) | `lua/eli/plugins/fzf-lua.lua` |
-| `<leader>fe` | Toggle file explorer | `lua/eli/plugins/nvim-tree.lua` |
+| `<leader>fe` | Toggle file explorer (in diffview: toggle its file panel) | `lua/eli/plugins/nvim-tree.lua`, `lua/eli/plugins/diffview.lua` |
 | `<leader>bn` | Next buffer | `lua/eli/core/keymaps.lua` |
 | `<leader>bp` | Previous buffer | `lua/eli/core/keymaps.lua` |
 | `<leader>wh` | Move to left window | `lua/eli/core/keymaps.lua` |

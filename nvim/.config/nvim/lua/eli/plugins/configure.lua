@@ -16,3 +16,4 @@ require("eli.plugins.autopairs")
 require("eli.plugins.lualine")
 require("eli.plugins.gitsigns")
 
+require("eli.plugins.diffview")
