@@ -20,8 +20,10 @@ branch (main or master). The agent commits freely inside the sandbox; your
 repository is mounted read-only and only changes when you run box merge.
 
 Run inside the main checkout or any worktree of the project; opening and
-reviewing require a tmux client. BOX_CPUS and BOX_MEMORY size new sandboxes
-(default: 4 and 8g).
+reviewing require a tmux client. Claude sandboxes are created with
+`sbx env create` from ~/.sbxenv.yaml (stowed from dotfiles/sbx), merged with the
+project's sbxenv.yaml when it has one; that file sets sizing and kits. Other
+agents get a plain `sbx create --clone`.
 HELP
 }
 # Local default branch: named by origin/HEAD when set, else main, else master.
@@ -100,8 +102,11 @@ esac
 
 if [[ "$op" == config ]]; then
   [[ $# -eq 0 ]] || fail 'config takes no arguments'
-  printf 'Project:        %s\nSession:        %s\nSandbox names:  %s<task>\nDefault agent:  claude\nNew sandboxes:  %s CPUs, %s memory\n' \
-    "$main_root" "$session" "$prefix" "${BOX_CPUS:-4}" "${BOX_MEMORY:-8g}"
+  env_files="$HOME/.sbxenv.yaml"
+  [[ -f "$HOME/.sbxenv.yaml" ]] || env_files='(missing ~/.sbxenv.yaml; stow dotfiles/sbx)'
+  [[ ! -f "$main_root/sbxenv.yaml" ]] || env_files+=" + $main_root/sbxenv.yaml"
+  printf 'Project:        %s\nSession:        %s\nSandbox names:  %s<task>\nDefault agent:  claude\nClaude config:  %s\n' \
+    "$main_root" "$session" "$prefix" "$env_files"
   exit 0
 fi
 
@@ -249,18 +254,28 @@ if [[ "$op" == open && -z "$status" ]]; then fail "no sandbox for task $task; cr
 if [[ -z "$status" ]]; then
   base_ref=$(default_base)
   printf 'Creating sandbox %s (the first run downloads the agent image)...\n' "$name"
-  # --clone gives the agent a private clone; the host repository is mounted read-only.
-  sbx create --clone --name "$name" --cpus "${BOX_CPUS:-4}" --memory "${BOX_MEMORY:-8g}" "$agent" "$main_root" >/dev/null \
-    || fail "sbx create failed; retry with: sbx create --clone --name $name $agent $main_root"
+  if [[ "$agent" == claude ]]; then
+    # ~/.sbxenv.yaml (dotfiles/sbx) declares clone mode, sizing and the claude-prefs kit with
+    # personal settings and notifications. sbx merges the project's sbxenv.yaml over it. With no
+    # path argument sbx reads both and treats the current directory as the project, so run from
+    # the repository root and never pass a path.
+    [[ -f "$HOME/.sbxenv.yaml" ]] || fail 'missing ~/.sbxenv.yaml; run: stow --no-folding sbx (from dotfiles)'
+    if [[ -f "$main_root/sbxenv.yaml" ]]; then
+      # A project file can run commands on this machine, so let sbx show its plan and ask.
+      (cd "$main_root" && sbx env create --name "$name") || fail "sbx env create failed for $name"
+    else
+      # Only our own defaults apply; sbx would otherwise ask to approve every new sandbox name.
+      out=$(cd "$main_root" && sbx env create --force --name "$name" 2>&1) \
+        || { printf '%s\n' "$out" >&2; fail "sbx env create failed for $name"; }
+    fi
+  else
+    # Other agents don't use the env file: its kit only applies to Claude.
+    # --clone gives the agent a private clone; the host repository is mounted read-only.
+    sbx create --clone --name "$name" "$agent" "$main_root" >/dev/null \
+      || fail "sbx create failed; retry with: sbx create --clone --name $name $agent $main_root"
+  fi
   # Inside the clone, origin is the host repository, so origin/<base> is the local default branch.
   sbx exec "$name" git switch --quiet --no-track -c "$branch" "origin/$base_ref"
-  # Claude can't detect the host terminal from inside the sandbox, so it sends no notifications
-  # by default. A terminal bell passes through tmux, which marks the window (monitor-bell).
-  # Claude rings once idle for messageIdleNotifThresholdMs (default 60s); 5s flags finished work promptly.
-  if [[ "$agent" == claude ]]; then
-    sbx exec "$name" sh -c 'f=$HOME/.claude.json; jq ".preferredNotifChannel = \"terminal_bell\" | .messageIdleNotifThresholdMs = 5000 | .taskCompleteNotifEnabled = true | .inputNeededNotifEnabled = true" "$f" > "$f.tmp" && mv "$f.tmp" "$f"' \
-      || printf 'box: could not enable Claude notifications in %s\n' "$name" >&2
-  fi
   printf 'Created %s on %s from %s @ %s\n' "$name" "$branch" "$base_ref" "$(git -C "$main_root" rev-parse --short "$base_ref")"
 fi
 

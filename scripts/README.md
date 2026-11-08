@@ -28,15 +28,37 @@ After adding a new script to `scripts/.local/bin/`, re-stow to link it:
 stow -R --no-folding scripts
 ```
 
-`~/.local/bin` is added to `PATH` by the tracked `zsh/.zshrc`. Optionally size new sandboxes in `~/.zshrc.local`:
+`~/.local/bin` is added to `PATH` by the tracked `zsh/.zshrc`.
+
+`box` also needs the sandbox configuration from the `sbx` package:
 
 ```bash
-export BOX_CPUS=4 BOX_MEMORY=8g    # the defaults
+stow --no-folding sbx
 ```
+
+## Sandbox configuration
+
+Claude sandboxes are created with `sbx env create`, which reads these files. The `sbx` package keeps them in dotfiles:
+
+| File | Controls |
+|---|---|
+| `sbx/.sbxenv.yaml` → `~/.sbxenv.yaml` | How every sandbox is created: clone mode, CPUs, memory, environment variables, kits |
+| `sbx/.config/sbx/kits/claude-prefs/claude-prefs.yaml` | What changes inside it: your Claude settings (the JSON block) and the notification preferences |
+| `sbxenv.yaml` at a project's root (optional, committed there) | That project only; merged over your defaults, and its values win |
+
+Changes apply to sandboxes created afterwards. To pick them up, `box remove` the task and create it again.
+
+The kit installs your settings as Claude Code *managed settings* (`/etc/claude-code/managed-settings.json` in the sandbox). sbx owns the sandbox's `~/.claude/settings.json`, and managed settings take priority over every other settings file, so the agent can't override them. A setting you want to change for one project belongs in that project's `.claude/settings.json` instead.
+
+When the project has no `sbxenv.yaml`, `box` approves the plan itself. Otherwise sbx shows the plan and asks, because a project file can run commands on your machine.
+
+Only `box` and `sbx env create` / `sbx env run` (run from the project root, with no path) read these files. A plain `sbx create claude` or `sbx run claude` skips them all. `box --agent <other>` also uses a plain `sbx create --clone`, since the kit is Claude-only.
+
+Kits and `sbx env` are experimental in sbx. If an update breaks sandbox creation, start with `sbx kit validate ~/.config/sbx/kits/claude-prefs`.
 
 ## How box works
 
-Each task gets its own sandbox (`sbx create --clone`): a private clone of the repository inside the sandbox, on branch `feature/<task>` started from the local default branch. Your repository is mounted into it read-only. The agent edits, runs tests and commits freely in there, with no permission prompts.
+Each task gets its own sandbox (`sbx env create`, in clone mode): a private clone of the repository inside the sandbox, on branch `feature/<task>` started from the local default branch. Your repository is mounted into it read-only. The agent edits, runs tests and commits freely in there, with no permission prompts.
 
 Its commits come back by `git fetch` from a `sandbox-<name>` remote that sbx adds to your repository while the sandbox runs. Fetched branches are also mirrored into `refs/sandboxes/<name>/*`, which survive the sandbox stopping or being removed. Nothing the agent does reaches your checkout until you `box merge`.
 

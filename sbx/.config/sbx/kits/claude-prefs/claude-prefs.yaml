@@ -1,0 +1,40 @@
+# syntax=docker/sandbox-kit:3
+schemaVersion: "3"
+kind: mixin
+displayName: Claude preferences
+description: Personal Claude Code settings and notification preferences for every sandbox
+requires: ["claude"]
+
+capabilities:
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      install:
+        # Managed settings sit above every other settings file and leave the
+        # sandbox-owned ~/.claude/settings.json alone. Add settings here.
+        - command: |
+            set -eu
+            mkdir -p /etc/claude-code
+            cat > /etc/claude-code/managed-settings.json <<'JSON'
+            {
+              "disableClaudeAiConnectors": true,
+              "disableWorkflows": true
+            }
+            JSON
+          user: root
+          description: Install personal Claude Code settings as managed settings
+      startup:
+        # Claude can't detect the host terminal from inside the sandbox, so it
+        # sends no notifications by default. A terminal bell passes through
+        # tmux, which marks the window. Claude rings once idle for
+        # messageIdleNotifThresholdMs (default 60s).
+        - command: |
+            set -eu
+            f="$HOME/.claude.json"
+            [ -s "$f" ] || echo '{}' > "$f"
+            jq '.preferredNotifChannel = "terminal_bell"
+              | .messageIdleNotifThresholdMs = 5000
+              | .taskCompleteNotifEnabled = true
+              | .inputNeededNotifEnabled = true' "$f" > "$f.tmp"
+            mv "$f.tmp" "$f"
+          user: agent
+          description: Ring the terminal bell when Claude finishes or needs input

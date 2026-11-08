@@ -1,0 +1,17 @@
+# Defaults for every sandbox created with `sbx env` (box uses it for each task).
+# A project can add its own sbxenv.yaml at its root; it merges over these.
+# Never put secret values here: use `sbx secret`, or a `command:`/`ref:` secret.
+schemaVersion: "1"
+agent: claude
+
+workspace:
+  path: ${{ env.projectDir }}
+  clone: true           # private clone; the host repository is mounted read-only
+
+sandboxOptions:
+  cpus: 4
+  memory: 8g
+
+kits:
+  # Personal Claude settings and notification preferences.
+  - ${{ env.fileDir }}/.config/sbx/kits/claude-prefs
