@@ -12,7 +12,7 @@ Usage:
   box merge <task> [--squash]    Merge the reviewed commits into the default branch
   box list                       List this project's sandboxes
   box config                     Show effective project configuration
-  box remove <task>              Fetch, then delete the sandbox
+  box remove <task>              Close its window, fetch, then delete the sandbox
 
 Each task runs an agent (default: claude) in a Docker Sandbox (sbx) on a private
 clone of the repository, on branch feature/<task> started from the local default
@@ -206,17 +206,29 @@ fi
 
 if [[ "$op" == remove ]]; then
   [[ -n "$status" ]] || fail "no sandbox for task $task"
+  window_id=
   if command -v tmux >/dev/null && tmux has-session -t "=$session" 2>/dev/null; then
     window_id=$(find_window)
-    [[ -z "$window_id" ]] || fail "tmux window $window_id is still open; close it first (Ctrl-a &), then retry"
   fi
-  # Fetch first so the agent's last commits are in this repository before the sandbox goes.
+  # Closing the window would kill this command too when it runs from a pane in it (e.g. :!box in the review pane).
+  if [[ -n "$window_id" && -n "${TMUX_PANE:-}" ]] \
+    && [[ "$(tmux display-message -p -t "$TMUX_PANE" '#{window_id}')" == "$window_id" ]]; then
+    fail "run box remove from another window; this one (box:$task) will be closed"
+  fi
+  if [[ -n "$window_id" ]]; then
+    printf 'Delete sandbox %s and close its window box:%s (stops the agent)? [y/N] ' "$name" "$task" >&2
+  else
+    printf 'Delete sandbox %s? [y/N] ' "$name" >&2
+  fi
+  read -r answer || exit 1
+  [[ "$answer" == y || "$answer" == Y || "$answer" == yes ]] || { echo 'Cancelled.'; exit 0; }
+  # Stop the agent before fetching, so its last commits are included. The sandbox keeps running;
+  # if a later check fails, box open <task> reopens the window.
+  if [[ -n "$window_id" ]]; then tmux kill-window -t "$window_id"; fi
+  # Fetch so the agent's last commits are in this repository before the sandbox goes.
   fetch_agent
   base_ref=$(default_base)
   unmerged=$(unmerged_count "$tip")
-  printf 'Delete sandbox %s? [y/N] ' "$name" >&2
-  read -r answer || exit 1
-  [[ "$answer" == y || "$answer" == Y || "$answer" == yes ]] || { echo 'Cancelled.'; exit 0; }
   keep=0
   if [[ "$unmerged" -gt 0 ]]; then
     printf '%s has %s commit(s) not in %s:\n' "$branch" "$unmerged" "$base_ref" >&2
