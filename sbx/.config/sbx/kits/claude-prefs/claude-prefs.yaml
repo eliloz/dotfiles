@@ -19,11 +19,32 @@ capabilities:
               "disableClaudeAiConnectors": true,
               "disableWorkflows": true,
               "disableBundledSkills": true,
-              "disableArtifact": true
+              "disableArtifact": true,
+              "statusLine": {
+                "type": "command",
+                "command": "/etc/claude-code/statusline.sh"
+              }
             }
             JSON
+            # Status line: context tokens in bold yellow, then (percent used) in
+            # grey, e.g. "45.2k(23%)". Claude pipes session JSON to stdin. jq only:
+            # no Node or network, so the sandbox firewall never matters.
+            cat > /etc/claude-code/statusline.sh <<'SH'
+            #!/bin/sh
+            jq -r '
+              (.context_window // {}) as $c
+              | ($c.current_usage // {}) as $u
+              | (($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0)
+                 + ($u.cache_read_input_tokens // 0)) as $tok
+              | ($c.used_percentage // 0 | floor) as $pct
+              | (if $tok >= 1000 then (($tok / 100 | floor) / 10 | tostring) + "k"
+                 else ($tok | tostring) end) as $len
+              | "\u001b[1;33m\($len)\u001b[0m\u001b[90m(\($pct)%)\u001b[0m"
+            '
+            SH
+            chmod 755 /etc/claude-code/statusline.sh
           user: root
-          description: Install personal Claude Code settings as managed settings
+          description: Install personal Claude Code settings and status line as managed settings
       startup:
         # Claude can't detect the host terminal from inside the sandbox, so it
         # sends no notifications by default. A terminal bell passes through

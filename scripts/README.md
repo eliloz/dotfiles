@@ -50,6 +50,8 @@ Changes apply to sandboxes created afterwards. To pick them up, `box remove` the
 
 The kit installs your settings as Claude Code *managed settings* (`/etc/claude-code/managed-settings.json` in the sandbox). sbx owns the sandbox's `~/.claude/settings.json`, and managed settings take priority over every other settings file, so the agent can't override them. A setting you want to change for one project belongs in that project's `.claude/settings.json` instead.
 
+The kit also installs a status line (`/etc/claude-code/statusline.sh`, a short `jq` script, so no Node or network is needed). It shows context tokens in bold yellow and the percent used in grey, like `45.2k(23%)`. Edit the script in the kit to change it.
+
 When the project has no `sbxenv.yaml`, `box` approves the plan itself. Otherwise sbx shows the plan and asks, because a project file can run commands on your machine.
 
 Only `box` and `sbx env create` / `sbx env run` (run from the project root, with no path) read these files. A plain `sbx create claude` or `sbx run claude` skips them all. `box --agent <other>` also uses a plain `sbx create --clone`, since the kit is Claude-only.
