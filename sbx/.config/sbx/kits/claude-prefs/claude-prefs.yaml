@@ -17,7 +17,9 @@ capabilities:
             cat > /etc/claude-code/managed-settings.json <<'JSON'
             {
               "disableClaudeAiConnectors": true,
-              "disableWorkflows": true
+              "disableWorkflows": true,
+              "disableBundledSkills": true,
+              "disableArtifact": true
             }
             JSON
           user: root
