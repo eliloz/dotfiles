@@ -70,5 +70,8 @@ vim.lsp.enable({
 	"clangd",
 	"bashls",
 	"gopls",
+	"docker_language_server",
+	"cssls",
+	"superhtml",
 })
 

@@ -2,19 +2,20 @@ require("mason").setup({})
 
 require("mason-tool-installer").setup({
 	ensure_installed = {
-		-- LSP servers
+		-- LSP servers (rust-analyzer comes from rustup instead)
 		"lua-language-server",
-		"rust-analyzer",
 		"typescript-language-server",
 		"pyright",
 		"clangd",
 		"bash-language-server",
 		"gopls",
+		"docker-language-server",
+		"css-lsp",
+		"superhtml",
 		-- Formatters
 		"shfmt",
 		"clang-format",
 		"prettier",
-		"google-java-format",
 		"stylua",
 		-- Linters
 		"eslint_d",

@@ -5,7 +5,6 @@ local formatters_by_ft = {
 	c = { "clang_format" },
 	css = { "prettier" },
 	html = { "prettier" },
-	java = { "google-java-format" },
 	javascript = { "prettier" },
 	javascriptreact = { "prettier" },
 	json = { "prettier" },

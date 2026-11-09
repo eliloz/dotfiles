@@ -70,7 +70,7 @@ vim.lsp.config("*", {
 - File: `lua/eli/plugins/mason.lua`
 - `mason-tool-installer` keeps one `ensure_installed` list of LSP servers, formatters, and linters. On every startup it installs anything missing in the background, so a fresh machine only needs to open Neovim once.
 - Check status with `:Mason`; force a run with `:MasonToolsInstall`.
-- Runtimes are not managed here. Node-based tools (pyright, prettier, ts/bash servers, eslint_d) need a global `node` (set via `mise use -g node@lts`). `gopls` needs Go and `google-java-format` needs Java; pin those per project with mise and start `nvim` from inside the project.
+- Runtimes are not managed here. Node-based tools (pyright, prettier, ts/bash servers, cssls, eslint_d) need a global `node` (set via `mise use -g node@lts`). `gopls` needs `go`, which comes from the global mise config (projects can pin their own). rust-analyzer comes from rustup (`rustup component add rust-analyzer`), not Mason, so it matches the active toolchain. See the top-level dotfiles README for the full dependency map.
 
 ## Linting and formatting
 
@@ -111,6 +111,6 @@ vim.lsp.config("*", {
 - Add a plugin: edit `lua/eli/plugins/install.lua`, then configure it in `lua/eli/plugins/<name>.lua`, and require it from `lua/eli/plugins/configure.lua`.
 - Add server custom settings: create `lsp/<server>.lua`.
 - Enable/disable LSP servers: update the list in `lua/eli/plugins/lspconfig.lua`.
-- Add an LSP server, formatter, or linter binary: add its Mason package name to `ensure_installed` in `lua/eli/plugins/mason.lua`.
+- Add an LSP server, formatter, or linter binary: add its Mason package name to `ensure_installed` in `lua/eli/plugins/mason.lua`. For an LSP server, **also** add its lspconfig name to `vim.lsp.enable` in `lua/eli/plugins/lspconfig.lua`. Installing alone doesn't start it, and the two names often differ (Mason `typescript-language-server` → lspconfig `ts_ls`).
 - Add a linter or formatter for a filetype: update `linters_by_ft` in `lua/eli/plugins/linting.lua` or `formatters_by_ft` in `lua/eli/plugins/formatting.lua`.
 
