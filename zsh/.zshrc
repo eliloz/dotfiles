@@ -5,11 +5,6 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
-# ---------- Homebrew ----------
-
-eval "$(/opt/homebrew/bin/brew shellenv)"
-
-
 # ---------- PATH ----------
 
 # User scripts (stowed from dotfiles/scripts) and uv tools. typeset -U drops duplicate entries.
