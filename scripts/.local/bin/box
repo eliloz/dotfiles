@@ -5,18 +5,20 @@ fail() { printf 'box: %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'HELP'
 Usage:
-  box <task> [--agent NAME]      Create sandbox if absent, then open its agent window
-  box new <task> [--agent NAME]  Create sandbox only
-  box open <task>                Open the agent window
-  box review <task>              Fetch the agent's commits and diff them in their own tmux window
-  box merge <task> [--squash]    Merge the reviewed commits into the default branch
+  box <task> [--agent NAME] [--base BRANCH]      Create sandbox if absent, then open its agent window
+  box new <task> [--agent NAME] [--base BRANCH]  Create sandbox only
+  box open <task>                                Open the agent window
+  box review <task> [--base BRANCH]              Fetch the agent's commits and diff them in their own tmux window
+  box merge <task> [--squash] [--base BRANCH]    Merge the reviewed commits into the task's base branch
   box list                       List this project's sandboxes
   box config                     Show effective project configuration
   box remove <task>              Close its window, fetch, then delete the sandbox
 
 Each task runs an agent (default: claude) in a Docker Sandbox (sbx) on a private
-clone of the repository, on branch feature/<task> started from the local default
-branch (main or master). The agent commits freely inside the sandbox; your
+clone of the repository, on branch feature/<task>. The task starts from the
+branch checked out in the main checkout (or --base BRANCH) and later merges back
+into it. On review or merge, --base BRANCH retargets the task, e.g. after its base
+was merged and deleted. The agent commits freely inside the sandbox; your
 repository is mounted read-only and only changes when you run box merge.
 
 Run inside the main checkout or any worktree of the project; opening and
@@ -37,6 +39,22 @@ default_base() {
     git -C "$main_root" show-ref --verify --quiet "refs/heads/$name" && { printf '%s\n' "$name"; return; }
   done
   fail "can't find a local main or master branch"
+}
+# The branch a task started from and merges into. Tasks created before box recorded bases use the
+# default branch.
+task_base() {
+  git -C "$main_root" config --get "box.$1.base" || default_base
+}
+has_branch() {
+  git -C "$main_root" show-ref --verify --quiet "refs/heads/$1"
+}
+# True when the base was rewritten (rebase, amend, reset, squash merge) after the task started:
+# the agent's branch still holds the old commits, so they show up as its changes.
+base_rewritten() {
+  local start
+  start=$(git -C "$main_root" config --get "box.$name.start") || return 1
+  git -C "$main_root" rev-parse --verify --quiet "$start^{commit}" >/dev/null || return 1
+  ! git -C "$main_root" merge-base --is-ancestor "$start" "refs/heads/$base_ref"
 }
 # Prints running/stopped/..., or nothing when the sandbox does not exist.
 sandbox_status() {
@@ -112,18 +130,20 @@ fi
 
 if [[ "$op" == list ]]; then
   [[ $# -eq 0 ]] || fail 'list takes no arguments'
-  base_ref=$(default_base)
-  printf '%-24s %-10s %s\n' TASK STATUS 'UNMERGED COMMITS (last fetch)'
+  printf '%-24s %-10s %-24s %s\n' TASK STATUS BASE 'UNMERGED COMMITS (last fetch)'
   while IFS=$'\t' read -r sandbox status; do
     task=${sandbox#"$prefix"}
     tip="refs/sandboxes/$sandbox/feature/$task"
-    if git -C "$main_root" rev-parse --verify --quiet "$tip^{commit}" >/dev/null; then
+    base_ref=$(task_base "$sandbox")
+    if ! has_branch "$base_ref"; then
+      ahead='base branch missing'
+    elif git -C "$main_root" rev-parse --verify --quiet "$tip^{commit}" >/dev/null; then
       merged="refs/box-merged/$sandbox"
       ahead=$(unmerged_count "$tip")
     else
       ahead='not fetched'
     fi
-    printf '%-24s %-10s %s\n' "$task" "$status" "$ahead"
+    printf '%-24s %-10s %-24s %s\n' "$task" "$status" "$base_ref" "$ahead"
   done < <(sbx ls --json | jq -r --arg p "$prefix" '.[] | select(.name | startswith($p)) | [.name, .status] | @tsv')
   exit 0
 fi
@@ -134,11 +154,15 @@ task=$1; shift
 [[ "$task" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail 'task must use lowercase letters, numbers, _ or - and start with a letter or number'
 agent=claude
 squash=0
+base_arg=
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent) [[ "$op" == ensure || "$op" == new ]] || fail '--agent only applies when creating'
       [[ $# -ge 2 ]] || fail '--agent requires a value'; agent=$2; shift 2 ;;
     --squash) [[ "$op" == merge ]] || fail '--squash only applies to merge'; squash=1; shift ;;
+    --base) [[ "$op" == ensure || "$op" == new || "$op" == review || "$op" == merge ]] \
+        || fail '--base applies when creating, reviewing or merging'
+      [[ $# -ge 2 ]] || fail '--base requires a branch'; base_arg=$2; shift 2 ;;
     *) fail "unknown argument: $1" ;;
   esac
 done
@@ -151,11 +175,28 @@ reviewed="refs/box-reviewed/$name"
 merged="refs/box-merged/$name"
 status=$(sandbox_status "$name")
 
+if [[ -n "$base_arg" ]]; then
+  has_branch "$base_arg" || fail "no local branch $base_arg"
+  if [[ "$op" == review || "$op" == merge ]]; then
+    [[ -n "$status" ]] || fail "no sandbox for task $task"
+    # Retarget: later reviews and merges use the new base.
+    git -C "$main_root" config "box.$name.base" "$base_arg"
+  elif [[ -n "$status" ]]; then
+    fail "task $task already exists; retarget it with: box review $task --base $base_arg"
+  fi
+fi
+
 if [[ "$op" == review ]]; then
   require_tmux 'reviewing'
   command -v nvim >/dev/null || fail 'nvim is required'
   fetch_agent
-  base_ref=$(default_base)
+  base_ref=$(task_base "$name")
+  has_branch "$base_ref" || fail "task $task's base branch $base_ref no longer exists; retarget with: box review $task --base <branch>"
+  warning=
+  if base_rewritten; then
+    warning="WARNING: $base_ref was rewritten after $task started; the diff may include old copies of its commits. "
+    printf 'box: %s\n' "$warning" >&2
+  fi
   sha=$(git -C "$main_root" rev-parse "$tip")
   count=$(unmerged_count "$sha")
   [[ "$count" -gt 0 ]] || fail "the agent has no unmerged commits on $branch yet"
@@ -173,20 +214,24 @@ if [[ "$op" == review ]]; then
     "nvim -c $(printf '%q' "DiffviewOpen $range")")
   tmux switch-client -t "=$session"
   tmux select-window -t "$review_id"
-  tmux display-message "box: reviewing $count commit(s) at ${sha:0:7}; :qa closes the diff (agent is in box:$task); approve with: box merge $task"
+  tmux display-message "box: ${warning}reviewing $count commit(s) at ${sha:0:7}; :qa closes the diff (agent is in box:$task); approve with: box merge $task"
   exit 0
 fi
 
 if [[ "$op" == merge ]]; then
-  base_ref=$(default_base)
+  base_ref=$(task_base "$name")
+  has_branch "$base_ref" || fail "task $task's base branch $base_ref no longer exists; retarget with: box merge $task --base <branch>"
   sha=$(git -C "$main_root" rev-parse --verify --quiet "$reviewed^{commit}") || fail "nothing reviewed yet; run: box review $task"
   current=$(git -C "$main_root" symbolic-ref --quiet --short HEAD) || fail 'main checkout has a detached HEAD'
-  [[ "$current" == "$base_ref" ]] || fail "main checkout is on $current; switch it to $base_ref first"
+  [[ "$current" == "$base_ref" ]] || fail "main checkout is on $current; $task merges into $base_ref, so run: git switch $base_ref"
   [[ -z "$(git -C "$main_root" status --porcelain --untracked-files=no)" ]] || fail 'main checkout has uncommitted changes; commit or stash them first'
   if [[ "$(unmerged_count "$sha")" == 0 ]]; then
     printf 'Reviewed commit %s is already in %s.\n' "${sha:0:7}" "$base_ref"; exit 0
   fi
   if [[ -n "$status" ]]; then fetch_agent; fi
+  if base_rewritten; then
+    printf 'box: WARNING: %s was rewritten after %s started; this merge may bring back old copies of its commits.\n' "$base_ref" "$task" >&2
+  fi
   newer=$(git -C "$main_root" rev-list --count "$sha..$tip" 2>/dev/null || echo 0)
   if [[ "$newer" -gt 0 ]]; then
     printf 'box: %s commit(s) arrived after your review and will not be merged; run box review %s to see them.\n' "$newer" "$task" >&2
@@ -235,7 +280,8 @@ if [[ "$op" == remove ]]; then
   fi
   # Fetch so the agent's last commits are in this repository before the sandbox goes.
   fetch_agent
-  base_ref=$(default_base)
+  base_ref=$(task_base "$name")
+  has_branch "$base_ref" || base_ref=$(default_base)
   unmerged=$(unmerged_count "$tip")
   keep=0
   if [[ "$unmerged" -gt 0 ]]; then
@@ -259,6 +305,7 @@ if [[ "$op" == remove ]]; then
     < <(git -C "$main_root" for-each-ref --format='%(refname)' "refs/sandboxes/$name/")
   git -C "$main_root" update-ref -d "$reviewed" 2>/dev/null || true
   git -C "$main_root" update-ref -d "$merged" 2>/dev/null || true
+  git -C "$main_root" config --remove-section "box.$name" 2>/dev/null || true
   if [[ "$keep" == 1 ]]; then
     printf 'Removed sandbox %s. Kept its commits on branch %s.\n' "$name" "$branch"
   elif [[ "$unmerged" -gt 0 ]]; then
@@ -272,7 +319,19 @@ fi
 if [[ "$op" == new && -n "$status" ]]; then fail "sandbox already exists: $name"; fi
 if [[ "$op" == open && -z "$status" ]]; then fail "no sandbox for task $task; create it with: box $task"; fi
 if [[ -z "$status" ]]; then
-  base_ref=$(default_base)
+  current=$(git -C "$main_root" symbolic-ref --quiet --short HEAD) || current=
+  if [[ -n "$base_arg" ]]; then
+    base_ref=$base_arg
+  else
+    [[ -n "$current" ]] || fail 'main checkout has no current branch (detached HEAD or a rebase in progress); pick one with --base <branch>'
+    base_ref=$current
+    has_branch "$base_ref" || fail "branch $base_ref has no commits yet"
+  fi
+  # Pin the start commit now; sandbox creation is slow and the branch may move meanwhile.
+  start=$(git -C "$main_root" rev-parse "refs/heads/$base_ref")
+  if [[ "$base_ref" == "$current" && -n "$(git -C "$main_root" status --porcelain --untracked-files=no)" ]]; then
+    printf 'box: uncommitted changes in the main checkout are not copied to the sandbox\n' >&2
+  fi
   printf 'Creating sandbox %s (the first run downloads the agent image)...\n' "$name"
   if [[ "$agent" == claude ]]; then
     # ~/.sbxenv.yaml (dotfiles/sbx) declares clone mode, sizing and the claude-prefs kit with
@@ -294,9 +353,14 @@ if [[ -z "$status" ]]; then
     sbx create --clone --name "$name" "$agent" "$main_root" >/dev/null \
       || fail "sbx create failed; retry with: sbx create --clone --name $name $agent $main_root"
   fi
-  # Inside the clone, origin is the host repository, so origin/<base> is the local default branch.
-  sbx exec "$name" git switch --quiet --no-track -c "$branch" "origin/$base_ref"
-  printf 'Created %s on %s from %s @ %s\n' "$name" "$branch" "$base_ref" "$(git -C "$main_root" rev-parse --short "$base_ref")"
+  git -C "$main_root" config "box.$name.base" "$base_ref"
+  git -C "$main_root" config "box.$name.start" "$start"
+  # The clone has every commit of the host repository, so branch from the exact pinned commit.
+  sbx exec "$name" git switch --quiet --no-track -c "$branch" "$start"
+  default=$(default_base 2>/dev/null) || default=
+  note=
+  [[ -z "$default" || "$base_ref" == "$default" ]] || note=" (not $default)"
+  printf 'Created %s on %s from %s%s @ %s\n' "$name" "$branch" "$base_ref" "$note" "${start:0:7}"
 fi
 
 # `new` is intentionally create-only; no tmux window or agent session is opened.

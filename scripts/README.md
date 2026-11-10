@@ -60,9 +60,11 @@ Kits and `sbx env` are experimental in sbx. If an update breaks sandbox creation
 
 ## How box works
 
-Each task gets its own sandbox (`sbx env create`, in clone mode): a private clone of the repository inside the sandbox, on branch `feature/<task>` started from the local default branch. Your repository is mounted into it read-only. The agent edits, runs tests and commits freely in there, with no permission prompts.
+Each task gets its own sandbox (`sbx env create`, in clone mode): a private clone of the repository inside the sandbox, on branch `feature/<task>` started from the branch checked out in your main checkout (its *base*). Your repository is mounted into it read-only. The agent edits, runs tests and commits freely in there, with no permission prompts.
 
 Its commits come back by `git fetch` from a `sandbox-<name>` remote that sbx adds to your repository while the sandbox runs. Fetched branches are also mirrored into `refs/sandboxes/<name>/*`, which survive the sandbox stopping or being removed. Nothing the agent does reaches your checkout until you `box merge`.
+
+Each task records its base branch and starting commit in your repository's Git config (`box.<sandbox>.base`, `box.<sandbox>.start`). `box merge` merges into the base, and `box remove` deletes the entries. Tasks created before bases were recorded use the default branch.
 
 ## Commands
 
@@ -73,10 +75,12 @@ Its commits come back by `git fetch` from a `sandbox-<name>` remote that sbx add
 | `box new ratelimit` | Create the sandbox **without opening a window** |
 | `box open ratelimit` | Open (or restart) the agent window |
 | `box ratelimit --agent codex` | Use another sbx agent for a new sandbox |
+| `box ratelimit --base main` | Start a new task from `main` instead of the checked-out branch |
 | `box review ratelimit` | Fetch, then open a diffview of the agent's commits in its own full-screen window `diff:ratelimit` |
 | `Ctrl-a R` | Same as `box review` for the current `box:<task>` window |
-| `box merge ratelimit` | Merge the reviewed commits into the default branch (`--squash` to squash) |
-| `box list` | Show this project's sandboxes and their unmerged commit counts |
+| `box merge ratelimit` | Merge the reviewed commits into the task's base branch (`--squash` to squash) |
+| `box merge ratelimit --base main` | Retarget the task to `main`, then merge (also works with `box review`), e.g. after its base was merged and deleted |
+| `box list` | Show this project's sandboxes, their base branches and unmerged commit counts |
 | `box config` | Print project, session and sandbox settings |
 | `box remove ratelimit` | Close the agent window, fetch, then delete the sandbox |
 
@@ -86,7 +90,7 @@ Run `box` inside the project (main checkout or any worktree). Opening and review
 
 ```bash
 cd ~/code/project
-git pull                    # box branches from local main, so update it first
+git pull                    # box branches from the checked-out branch (here main), so update it first
 dev                         # creates/attaches tmux project session
 box ratelimit               # sandbox + window box:ratelimit with Claude
 # Give the agent its task; ask it for small commits.
@@ -98,7 +102,7 @@ box review ratelimit        # or Ctrl-a R in the agent window
 # ]c/[c between changes); :qa closes it, then switch back to the agent window box:ratelimit.
 # Reply to the agent and review again as needed.
 
-box merge ratelimit         # from anywhere in the project; main checkout must be on main and clean
+box merge ratelimit         # from anywhere in the project; main checkout must be on the base branch and clean
 uv run pytest               # first time the agent's code runs on the host
 git push
 
@@ -114,7 +118,9 @@ box remove ratelimit        # closes the agent window too; run it from another w
 - `box remove` fetches the agent's last commits before deleting anything. If commits remain unmerged, it lists them and asks whether to keep them as a normal `feature/<task>` branch or discard them. Either way it deletes the `refs/sandboxes/<name>/*` copies sbx made of the clone's branches.
 - `box remove` asks once, then closes the task's tmux window (stopping the agent) before its final fetch. Run it from another window; from a pane inside `box:<task>` it refuses.
 - Run tests and dev servers inside the sandbox; publish a port with `sbx ports` to open an app in the host browser.
-- Each sandbox starts from the local default branch as it was at creation. Nothing is fetched, so `git pull` first. Inside, `origin` is your repository, so the agent can `git fetch origin` to pick up newer commits.
+- Each sandbox starts from its base branch's last commit at creation. Uncommitted changes are not copied (box warns), and nothing is fetched, so `git pull` first. Inside, `origin` is your repository, so the agent can `git fetch origin` to pick up newer commits.
+- `box` prints the base when it creates a task and flags one that isn't the default branch. With a detached HEAD or a rebase in progress, it asks for `--base`.
+- Don't rebase, amend or squash-merge a base branch while a task built on it is open: the agent's branch keeps the old commits, so they show up in review and can conflict on merge. `box review` and `box merge` warn when this has happened.
 - Reopening a closed window restarts the agent; the clone and its commits persist until `box remove`.
 
 ## Test before real work
