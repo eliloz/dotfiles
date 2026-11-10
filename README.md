@@ -17,7 +17,7 @@ Every tool has exactly one owner. If you're not sure where something belongs, us
 
 | Owner | Manages | Manifest in this repo | Installs into |
 |---|---|---|---|
-| **Homebrew** | The base system: shell plugins, terminal, editor, stow, mise, everyday CLIs (rg, fd, fzf, jq, eza), k8s CLIs (kubectl, helm, k9s, tilt), GUI apps, fonts | `Brewfile` | `/opt/homebrew` |
+| **Homebrew** | The base system: shell plugins, terminal, editor, stow, mise, everyday CLIs (rg, fd, fzf, jq), k8s CLIs (kubectl, helm, k9s, tilt), GUI apps, fonts | `Brewfile` | `/opt/homebrew` |
 | **mise** | Language runtimes other than Python and Rust (Node, Go), standalone dev CLIs (herdr, pi, uv), and the **list** of global CLIs from language package registries (`pypi:`, `npm:`, `go:`, `cargo:` entries) | `mise/.config/mise/config.toml` (global), `mise.toml` per project | `~/.local/share/mise/installs` |
 | **uv** | Everything Python: interpreters, virtual environments, project dependencies. Also the engine behind mise's `pypi:` entries. | `uv/.config/uv/.python-version` (global default), and per project `.python-version` + `pyproject.toml` + `uv.lock` | `~/.local/share/uv/` |
 | **Mason** (in Neovim) | Editor tooling only: LSP servers, formatters, linters | `nvim/.config/nvim/lua/eli/plugins/mason.lua` | `~/.local/share/nvim/mason` |

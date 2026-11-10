@@ -36,6 +36,15 @@ compinit
 export EDITOR="nvim"
 export VISUAL="nvim"
 
+# zsh switches the line editor to vi mode when EDITOR/VISUAL contains "vi".
+# Force emacs keybindings instead.
+bindkey -e
+
+# tmux runs with extended-keys always, so Shift+Space / Shift+Enter arrive as
+# escape sequences (ESC [27;2;<key>~). Map them back to plain space / Enter.
+bindkey -s '^[[27;2;32~' ' '
+bindkey '^[[27;2;13~' accept-line
+
 alias vim="nvim"
 
 alias cw="cd ~/code/work/"
@@ -47,12 +56,13 @@ alias cs="cd ~/code/scratch/"
 
 source <(fzf --zsh)
 
-# ---------- eza ----------
+# ---------- ls ----------
 
-alias ls="eza --icons"
-alias ll="eza -lah --icons"
-alias la="eza -a --icons"
-alias lt="eza --tree --icons"
+# macOS ls is BSD ls: it only colors output when CLICOLOR is set.
+export CLICOLOR=1
+
+alias ll="ls -lAh"
+alias la="ls -A"
 
 # ---------- Powerlevel10k ----------
 
