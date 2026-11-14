@@ -121,6 +121,7 @@ Not the kit's job:
 
 ```bash
 bash -n ~/.local/bin/dev ~/.local/bin/box
+shellcheck ~/.local/bin/dev ~/.local/bin/box
 cd /path/to/a/disposable/git/repo
 box demo                     # ask Claude to commit a small change, then exit
 box take demo

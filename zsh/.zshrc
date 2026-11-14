@@ -19,6 +19,8 @@ HISTSIZE=10000
 SAVEHIST=10000
 
 setopt HIST_IGNORE_DUPS
+# Commands typed with a leading space stay out of history
+setopt HIST_IGNORE_SPACE
 setopt SHARE_HISTORY
 
 
@@ -66,7 +68,7 @@ alias la="ls -A"
 
 # ---------- Powerlevel10k ----------
 
-source "$(brew --prefix)/share/powerlevel10k/powerlevel10k.zsh-theme"
+source "$HOMEBREW_PREFIX/share/powerlevel10k/powerlevel10k.zsh-theme"
 
 # ---------- mise ----------
 
@@ -74,12 +76,12 @@ eval "$(mise activate zsh)"
 
 # ---------- Plugins ----------
 
-source "$(brew --prefix)/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 
 # Ctrl+Space accepts the current autosuggestion
 bindkey '^ ' autosuggest-accept
 
-source "$(brew --prefix)/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 ZSH_HIGHLIGHT_STYLES[path]='none'
 
 

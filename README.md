@@ -136,7 +136,7 @@ Installers like to append lines to these files (rustup, JetBrains Toolbox, pipx)
 
 1. Install Homebrew, clone this repo to `~/dotfiles`.
 2. `brew bundle --file ~/dotfiles/Brewfile`
-3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty scripts ...` (every top-level directory except `docs/`)
+3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty scripts sbx` (every top-level directory except `docs/`). The repo's `.stowrc` passes `--no-folding`, so stow links individual files and never turns a whole directory like `~/.config/sbx` into a symlink into the repo. Otherwise anything a tool writes there (sbx's `credentials.yaml`) would land in the repo.
 4. Open a new shell (`mise activate` runs from `.zshrc`), then `mise install`. This installs global node, go, uv, pi, and any `pypi:` / `npm:` CLIs in the config.
 5. `uv python install --default 3.14` (global Python, and the base for Mason's pypi tools).
 6. Install rustup (https://rustup.rs), then `rustup component add rust-analyzer`, then `mise install` again so the `cargo:` CLIs (cargo-expand, and workshop-runner, which provides `wr`) build now that cargo exists. Install elan if needed.

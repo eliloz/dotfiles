@@ -20,6 +20,7 @@ capabilities:
               "disableWorkflows": true,
               "disableBundledSkills": true,
               "disableArtifact": true,
+              "model": "opus",
               "statusLine": {
                 "type": "command",
                 "command": "/etc/claude-code/statusline.sh"

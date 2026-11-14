@@ -27,6 +27,8 @@ brew "neovim"
 brew "powerlevel10k"
 # Search tool like grep and The Silver Searcher
 brew "ripgrep"
+# Static analysis and lint tool, for (ba)sh scripts
+brew "shellcheck"
 # Organize software neatly under a single directory tree (e.g. /usr/local)
 brew "stow"
 # Define your dev environment as code. For microservice apps on Kubernetes

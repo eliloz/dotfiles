@@ -99,6 +99,7 @@ if [[ "$op" == take ]]; then
   [[ -z "$(git -C "$here" status --porcelain --untracked-files=no)" ]] \
     || fail 'you have uncommitted changes; commit or stash them first'
   if [[ -n "$(git -C "$here" ls-files --others --exclude-standard)" ]]; then
+    # shellcheck disable=SC2016 # backticks are literal text
     printf 'box: note: untracked files present; `git reset --hard` leaves them, but `git add -A` would include them\n' >&2
   fi
   ensure_running

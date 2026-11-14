@@ -16,3 +16,11 @@ id_*
 *~
 .zsh_history
 .zcompdump*
+
+# Runtime state that tools write next to stowed config.
+# No blanket *.lock: nvim-pack-lock.json is tracked on purpose.
+credentials.yaml
+*.log
+*.sock*
+session-snapshots/
+.plugins.lock
