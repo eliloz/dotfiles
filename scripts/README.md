@@ -76,7 +76,7 @@ Then review it in Herdr's Changes panel (or `git diff --cached`):
 | Drop one file | `git restore --source=HEAD --staged --worktree <file>` |
 | Reject, or ask for changes | `git reset --hard`, tell the agent, then `box take` again: you get the full result, original work plus fixes, as one diff |
 
-After you **commit** something from the agent, tell it to run `git pull origin <branch>` before continuing. Inside the sandbox, `origin` is your repository, so this brings your commit into its history and the next `box take` shows only its new work. If you forget and committed its work unchanged, the next squash still applies cleanly; if you had edited it, expect conflicts.
+After you **commit** something from the agent, tell it to pull from your checkout before continuing: `git pull /run/sandbox/source <branch>`, where `<branch>` is the branch you committed to (`box take` prints the exact command). Your checkout is mounted read-only at `/run/sandbox/source` inside the sandbox; `origin` there is your GitHub remote, which doesn't have your local commit. Pulling brings your commit into its history and the next `box take` shows only its new work. If you forget and committed its work unchanged, the next squash still applies cleanly; if you had edited it, expect conflicts.
 
 `box take` squashes into the checkout you run it in, main or a linked worktree.
 

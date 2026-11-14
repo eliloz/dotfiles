@@ -21,8 +21,9 @@ claude-prefs kit. The clone starts on the branch you have checked out. Only the
 agent's commits come back, through `box take`.
 
 After `box take`: review in Herdr's Changes panel, then `git commit` to accept or
-`git reset --hard` to reject. After committing, tell the agent to run
-`git pull origin <branch>` before it continues.
+`git reset --hard` to reject. After committing, tell the agent to pull from your
+checkout before it continues: `git pull /run/sandbox/source <branch>`, where
+<branch> is the branch you committed to (`box take` prints the exact command).
 HELP
 }
 
@@ -116,7 +117,7 @@ if [[ "$op" == take ]]; then
   fi
   git -C "$here" diff --cached --stat
   printf '\nReview in the Changes panel. Accept: git commit. Reject: git reset --hard.\n'
-  printf 'After committing, tell the agent to run: git pull origin %s\n' "$(git -C "$here" symbolic-ref --quiet --short HEAD || echo '<branch>')"
+  printf 'After committing, tell the agent to pull from your checkout: git pull /run/sandbox/source %s\n' "$(git -C "$here" symbolic-ref --quiet --short HEAD || echo '<branch>')"
   exit 0
 fi
 
