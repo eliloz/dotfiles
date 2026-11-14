@@ -57,5 +57,5 @@ cask "font-meslo-lg-nerd-font"
 cask "ghostty"
 # Desktop app for coding agents (installs herdr-core / hc on first launch)
 cask "herdr-app"
-# Docker Sandboxes (used by the box script for agent sandboxes)
+# Docker Sandboxes (agent sandboxes; the box script drives it)
 cask "docker/tap/sbx"

@@ -2,7 +2,7 @@
 schemaVersion: "3"
 kind: mixin
 displayName: Claude preferences
-description: Personal Claude Code settings and notification preferences for every sandbox
+description: Personal Claude Code settings and status line for every sandbox
 requires: ["claude"]
 
 capabilities:
@@ -46,19 +46,3 @@ capabilities:
             chmod 755 /etc/claude-code/statusline.sh
           user: root
           description: Install personal Claude Code settings and status line as managed settings
-      startup:
-        # Claude can't detect the host terminal from inside the sandbox, so it
-        # sends no notifications by default. A terminal bell passes through
-        # tmux, which marks the window. Claude rings once idle for
-        # messageIdleNotifThresholdMs (default 60s).
-        - command: |
-            set -eu
-            f="$HOME/.claude.json"
-            [ -s "$f" ] || echo '{}' > "$f"
-            jq '.preferredNotifChannel = "terminal_bell"
-              | .messageIdleNotifThresholdMs = 5000
-              | .taskCompleteNotifEnabled = true
-              | .inputNeededNotifEnabled = true' "$f" > "$f.tmp"
-            mv "$f.tmp" "$f"
-          user: agent
-          description: Ring the terminal bell when Claude finishes or needs input

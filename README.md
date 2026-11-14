@@ -7,7 +7,7 @@ Most of this README covers **how tools get installed, which manager owns what, a
 Other docs:
 - `docs/python.md`: how uv, venvs and site-packages work
 - `nvim/.config/nvim/README.md`: Neovim config layout and plugins
-- `scripts/README.md`: the `box` / `dev` scripts and sbx agent sandboxes
+- `scripts/README.md`: the `dev` and `box` scripts (tmux sessions; Claude in sbx sandboxes)
 
 ---
 
