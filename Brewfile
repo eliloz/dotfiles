@@ -55,5 +55,7 @@ cask "docker-desktop"
 cask "font-meslo-lg-nerd-font"
 # Terminal emulator that uses platform-native UI and GPU acceleration
 cask "ghostty"
+# Desktop app for coding agents (installs herdr-core / hc on first launch)
+cask "herdr-app"
 # Docker Sandboxes (used by the box script for agent sandboxes)
 cask "docker/tap/sbx"

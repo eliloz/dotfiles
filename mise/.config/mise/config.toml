@@ -3,7 +3,6 @@
 "cargo:workshop-runner" = "latest"
 # Global Go. gopls (Mason) runs `go` to load projects. Projects can pin their own.
 go = "latest"
-herdr = "latest"
 # Global Node. Mason's npm-based tools (pyright, prettier, eslint_d,
 # typescript/bash language servers, cssls) run on it. Don't remove. See README.md.
 node = "lts"

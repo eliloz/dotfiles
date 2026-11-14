@@ -18,11 +18,12 @@ Every tool has exactly one owner. If you're not sure where something belongs, us
 | Owner | Manages | Manifest in this repo | Installs into |
 |---|---|---|---|
 | **Homebrew** | The base system: shell plugins, terminal, editor, stow, mise, everyday CLIs (rg, fd, fzf, jq), k8s CLIs (kubectl, helm, k9s, tilt), GUI apps, fonts | `Brewfile` | `/opt/homebrew` |
-| **mise** | Language runtimes other than Python and Rust (Node, Go), standalone dev CLIs (herdr, pi, uv), and the **list** of global CLIs from language package registries (`pypi:`, `npm:`, `go:`, `cargo:` entries) | `mise/.config/mise/config.toml` (global), `mise.toml` per project | `~/.local/share/mise/installs` |
+| **mise** | Language runtimes other than Python and Rust (Node, Go), standalone dev CLIs (pi, uv), and the **list** of global CLIs from language package registries (`pypi:`, `npm:`, `go:`, `cargo:` entries) | `mise/.config/mise/config.toml` (global), `mise.toml` per project | `~/.local/share/mise/installs` |
 | **uv** | Everything Python: interpreters, virtual environments, project dependencies. Also the engine behind mise's `pypi:` entries. | `uv/.config/uv/.python-version` (global default), and per project `.python-version` + `pyproject.toml` + `uv.lock` | `~/.local/share/uv/` |
 | **Mason** (in Neovim) | Editor tooling only: LSP servers, formatters, linters | `nvim/.config/nvim/lua/eli/plugins/mason.lua` | `~/.local/share/nvim/mason` |
 | **rustup** | The Rust toolchain (rustc, cargo, clippy, rustfmt, and rust-analyzer as a component, so it always matches the compiler). `~/.cargo/bin` holds rustup's proxies, which forward to the active toolchain. Rust CLIs (cargo-expand, wr) are `cargo:` entries in the mise config, not plain `cargo install` | none: its own installer | `~/.rustup`, `~/.cargo` |
 | **elan** | The Lean toolchain | none: its own installer | `~/.elan` |
+| **herdr-core** | The server behind the Herdr app (brew cask `herdr-app`), and its `hc` CLI. The app installs it on first launch; `hc update` updates it | none: its own installer | `~/.local/share/herdr-core`, linked as `~/.local/bin/hc` |
 
 ## Installing something new
 
@@ -136,9 +137,10 @@ Installers like to append lines to these files (rustup, JetBrains Toolbox, pipx)
 1. Install Homebrew, clone this repo to `~/dotfiles`.
 2. `brew bundle --file ~/dotfiles/Brewfile`
 3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty scripts ...` (every top-level directory except `docs/`)
-4. Open a new shell (`mise activate` runs from `.zshrc`), then `mise install`. This installs global node, go, uv, herdr, pi, and any `pypi:` / `npm:` CLIs in the config.
+4. Open a new shell (`mise activate` runs from `.zshrc`), then `mise install`. This installs global node, go, uv, pi, and any `pypi:` / `npm:` CLIs in the config.
 5. `uv python install --default 3.14` (global Python, and the base for Mason's pypi tools).
 6. Install rustup (https://rustup.rs), then `rustup component add rust-analyzer`, then `mise install` again so the `cargo:` CLIs (cargo-expand, and workshop-runner, which provides `wr`) build now that cargo exists. Install elan if needed.
-7. Open `nvim` once. mason-tool-installer installs everything in `ensure_installed` in the background. Check with `:Mason`.
+7. Open Herdr once (`open -a Herdr`). It installs herdr-core and links `hc` into `~/.local/bin`. Check with `hc server status`.
+8. Open `nvim` once. mason-tool-installer installs everything in `ensure_installed` in the background. Check with `:Mason`.
 
-The order matters: Mason (step 7) needs node, go and python3 from steps 4 and 5 to already be there.
+The order matters: Mason (step 8) needs node, go and python3 from steps 4 and 5 to already be there.
