@@ -68,7 +68,7 @@ alias la="ls -A"
 
 # ---------- Powerlevel10k ----------
 
-source "$HOMEBREW_PREFIX/share/powerlevel10k/powerlevel10k.zsh-theme"
+source "${HOMEBREW_PREFIX:-/opt/homebrew}/share/powerlevel10k/powerlevel10k.zsh-theme"
 
 # ---------- mise ----------
 
@@ -76,12 +76,12 @@ eval "$(mise activate zsh)"
 
 # ---------- Plugins ----------
 
-source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+source "${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 
 # Ctrl+Space accepts the current autosuggestion
 bindkey '^ ' autosuggest-accept
 
-source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+source "${HOMEBREW_PREFIX:-/opt/homebrew}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 ZSH_HIGHLIGHT_STYLES[path]='none'
 
 
