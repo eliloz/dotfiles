@@ -10,11 +10,13 @@
  * - The new pane opens beside the pane running Main, in Main's working directory.
  *   If that pane cannot be identified exactly, nothing is opened.
  *
- * Usage: /split            pick a message, open the branch
- *        /split <name>     same, and name the branched session
+ * Usage: /split                    pick a message, open the branch
+ *        /split "Calendar idea"    same, and name the branched session
+ *        /split --help             print the guide (no turn, nothing saved)
  */
 import { accessSync, closeSync, constants, existsSync, openSync, readSync, rmSync } from "node:fs";
 import * as path from "node:path";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import {
 	CURRENT_SESSION_VERSION,
 	type ExtensionAPI,
@@ -222,14 +224,72 @@ function createBranch(ctx: ExtensionCommandContext, mainFile: string, pickedId: 
 	}
 }
 
+// ---------- Help, examples, argument hints ----------
+
+const ARG_HINT = '["name"]';
+const HELP = `/split ${ARG_HINT}: branch this conversation into a new Herdr pane beside this one
+
+You pick the message to branch at, or the whole conversation. The branch opens in a new
+pane to the right, in this conversation's folder, and its agent waits for your next
+message. This conversation is never changed.
+
+Arguments
+  "name"     Optional. Names the branched session. Quotes are optional: /split Calendar idea
+  --help     Print this guide. Also -h. Adds nothing to the conversation.
+
+Examples
+  /split                     pick a message, open the branch unnamed
+  /split "Calendar idea"     same, and name the branch "Calendar idea"
+
+Needs: a Herdr app pane (hc and herdr-app on PATH) and the interactive TUI.
+If the pane cannot be opened, the branch is still saved and the error shows the
+pi --session command that opens it.`;
+
+/**
+ * Shown after "/split ". In pi 1.5.2 Enter applies the highlighted suggestion instead of
+ * submitting, so every item's value must leave a valid command behind; the first is a no-op.
+ */
+const EXAMPLES: AutocompleteItem[] = [
+	{ value: "", label: "/split", description: "pick a message, open the branch (Enter again)" },
+	{ value: '"Calendar idea"', label: '/split "Calendar idea"', description: "same, and name the branch" },
+	{ value: "--help", label: "/split --help", description: "print the guide here; nothing is saved" },
+];
+
+export function completions(prefix: string): AutocompleteItem[] | null {
+	if (prefix === "") return EXAMPLES;
+	// A flag being typed: offer --help. While a name is typed, stay quiet so one Enter submits.
+	if (prefix.startsWith("-") && "--help".startsWith(prefix)) return [EXAMPLES[2]];
+	return null;
+}
+
+export type Parsed = { help: true } | { help: false; name?: string };
+
+export function parseArgs(args: string): Parsed {
+	const raw = args.trim();
+	if (raw === "--help" || raw === "-h") return { help: true };
+	if (raw.startsWith("-")) throw new Error(`Unknown option ${raw.split(/\s/, 1)[0]}. Run /split --help`);
+	const name = /^(["'])(.*)\1$/s.exec(raw)?.[2].trim() ?? raw;
+	return { help: false, name: name || undefined };
+}
+
 // ---------- Command ----------
 
 export default function (pi: ExtensionAPI) {
 	let busy = false;
 
 	pi.registerCommand("split", {
-		description: "Branch this conversation at a message you pick into a new Herdr pane (/split [name])",
+		// pi 1.5.2 drops argumentHint for extension commands, so the hint leads the description.
+		description: `${ARG_HINT}  Branch into a new pane · --help`,
+		getArgumentCompletions: completions,
 		handler: async (args, ctx) => {
+			let parsed: Parsed;
+			try {
+				parsed = parseArgs(args);
+			} catch (error) {
+				return ctx.ui.notify(`/split: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
+			// notify("info") prints in the chat view only: no turn, nothing written to the session.
+			if (parsed.help) return ctx.ui.notify(HELP, "info");
 			if (busy) return ctx.ui.notify("A split is already in progress", "warning");
 			if (!ctx.hasUI) return ctx.ui.notify("/split needs the interactive TUI", "error");
 			busy = true;
@@ -261,7 +321,7 @@ export default function (pi: ExtensionAPI) {
 					entryId = options[index - 1].entryId;
 				}
 
-				const name = args.trim() || undefined;
+				const name = parsed.name;
 				branchFile = createBranch(ctx, mainFile, entryId, name);
 				const newPane = await openPane(exec, ctx.cwd, pane, branchFile);
 				ctx.ui.notify(
