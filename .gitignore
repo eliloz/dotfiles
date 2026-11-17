@@ -11,6 +11,9 @@
 id_*
 .netrc
 
+# Dev dependencies (typechecking only; npm install recreates them)
+node_modules/
+
 # Editor/runtime state
 *.swp
 *~

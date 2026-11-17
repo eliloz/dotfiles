@@ -136,11 +136,12 @@ Installers like to append lines to these files (rustup, JetBrains Toolbox, pipx)
 
 1. Install Homebrew, clone this repo to `~/dotfiles`.
 2. `brew bundle --file ~/dotfiles/Brewfile`
-3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty herdr-app scripts sbx` (every top-level directory except `docs/`). The repo's `.stowrc` passes `--no-folding`, so stow links individual files and never turns a whole directory like `~/.config/sbx` into a symlink into the repo. Otherwise anything a tool writes there (sbx's `credentials.yaml`) would land in the repo.
+3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty herdr-app scripts sbx pi` (every top-level directory except `docs/`). The repo's `.stowrc` passes `--no-folding`, so stow links individual files and never turns a whole directory like `~/.config/sbx` into a symlink into the repo. Otherwise anything a tool writes there (sbx's `credentials.yaml`) would land in the repo.
 4. Open a new shell (`mise activate` runs from `.zshrc`), then `mise install`. This installs global node, go, uv, pi, and any `pypi:` / `npm:` CLIs in the config.
 5. `uv python install --default 3.14` (global Python, and the base for Mason's pypi tools).
 6. Install rustup (https://rustup.rs), then `rustup component add rust-analyzer`, then `mise install` again so the `cargo:` CLIs (cargo-expand, and workshop-runner, which provides `wr`) build now that cargo exists. Install elan if needed.
 7. Open Herdr once (`open -a Herdr`). It installs herdr-core and links `hc` into `~/.local/bin`. Check with `hc server status`. Two of its files are tracked in `herdr-app/`: `settings.json` sets the terminal font to MesloLGS Nerd Font Mono, the same as Ghostty, so Nerd Font icons draw under the cursor and in selections; `keys.json` adds tmux-style `ctrl-a` prefix bindings next to Herdr's defaults. Herdr writes both files itself, so check `git diff` after changing settings or bindings in the app.
-8. Open `nvim` once. mason-tool-installer installs everything in `ensure_installed` in the background. Check with `:Mason`.
+8. pi: the `pi/` package links `~/.pi/agent/extensions/split.ts`, which adds `/split` (branch the conversation into a new Herdr pane beside it; needs `hc` and `herdr-app` on PATH). pi finds it without any setting, and `/reload` picks up edits. Only that file is linked: `package.json`, `tsconfig.json` and `node_modules` are for typechecking (`cd ~/dotfiles/pi && npm install && npm run check`), and pi does not need them at runtime. `~/.pi/agent/settings.json` and `auth.json` are not tracked: pi rewrites the first, and the second holds credentials.
+9. Open `nvim` once. mason-tool-installer installs everything in `ensure_installed` in the background. Check with `:Mason`.
 
-The order matters: Mason (step 8) needs node, go and python3 from steps 4 and 5 to already be there.
+The order matters: Mason (step 9) needs node, go and python3 from steps 4 and 5 to already be there.
