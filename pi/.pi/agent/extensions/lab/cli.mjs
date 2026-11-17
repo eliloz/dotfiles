@@ -6,6 +6,7 @@ import * as core from './core.mjs';
 import { help } from './help.mjs';
 import { testTarget } from './expectations.mjs';
 import { headline } from './report.mjs';
+import { projectAgents, latestReport } from './agents.mjs';
 
 function parse(argv) {
   const o = { _: [] };
@@ -110,7 +111,9 @@ async function testCmd(o) {
  * With --wait: block until the Tester has written its report, print the verdicts, then stop the lab (--keep: leave it open).
  */
 async function agentCmd(o, name) {
-  const onId = stopOnSignal(o.wait ? o : {}); // Ctrl-C while it opens (or waits) stops the lab
+  const onSignal = stopOnSignal(o.wait ? o : {}); // Ctrl-C while it opens (or waits) stops the lab
+  // "· run <id>" lets /lab in Pi follow the run (widget, result message) while the lab is still opening.
+  const onId = lab => { onSignal(lab); progress(`run ${lab}`); };
   const id = await core.startAgentLab({ name, model: o.model, agentModel: o.agentModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
   const r = core.readRun(id);
   console.log([`Lab ${id} for ${r.agent}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
@@ -194,6 +197,14 @@ async function main(argv) {
       for (const id of ids) console.log(await stopText(id));
       return 0;
     }
+    case 'agents': { const a = projectAgents(process.cwd()); console.log(o.json ? JSON.stringify(a) : a.length ? a.join('\n') : 'No agents with expectations here (agents/<name>/expectations.md).'); return 0; }
+    case 'report': {
+      const name = o._[0]; if (!name) throw Error('lab report <Agent>');
+      const f = latestReport(process.cwd(), name);
+      if (!f) { console.log(`No reports for ${name} yet. Run: lab test ${name}`); return 1; }
+      console.log(o.json ? JSON.stringify({ report: f }) : `${fs.readFileSync(f, 'utf8').trimEnd()}\n\n${f}`); return 0;
+    }
+    case 'new': throw Error('lab new runs inside Pi: it interviews you in the conversation. Type /lab new <Agent> there.');
     case 'leftovers': { const l = core.leftovers(o._[0]); console.log(o.json ? JSON.stringify(l, null, 2) : leftoverText(l)); return 0; }
     case 'clean': console.log(core.clean()); return 0;
     default: throw Error(`Unknown command "${cmd}". Run lab --help`);

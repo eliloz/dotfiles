@@ -1,53 +1,65 @@
-// One guide for both forms: `lab …` in a shell and `/lab …` in Pi.
-export const ARG_HINT = '<test|doctor|stop|list> · --help';
+// One guide for both forms: `lab …` in a shell and `/lab …` in Pi. Plus /lab's completions.
+import { FORMAT } from './expectations.mjs';
+
+export const ARG_HINT = '<new|test|report|doctor|stop|list> · --help';
 
 export function help(p = 'lab') {
   const shell = p === 'lab';
-  return `${p} ${ARG_HINT}: a private Herdr Lab window where a black-box lab agent tries a scenario
+  return `${p} ${ARG_HINT}: grow and test agents, and run checks, in a private Herdr Lab window
 
-It opens a second Herdr (its own app copy "Herdr Lab", core, socket and app home), a scratch
-Pi profile linked to your model logins, and a copy of this project's tracked files (no .git,
-secrets, agent or expectations files). A lab agent types and presses keys there, judges only
-from the visible pane text, quotes it, and writes a report. Then the lab stops itself.
-Your daily Herdr is never addressed.
-${shell ? '' : `
-Or ask in plain words; the agent calls the lab tool and reports every step:
-  Use the lab to run the first check in lab-scenarios.md
-  Now use the lab to run the /split check
-  Use the lab to check that ls lists README.md
-`}
-Commands
+A lab is a second Herdr (its own app copy "Herdr Lab", core, socket and app home), a scratch Pi
+profile linked to your model logins, and a copy of this project's tracked files (no .git, secrets,
+agent instructions or expectations). Your daily Herdr is never addressed.
+
+Agents (agents/<name>/: agent.md, expectations.md, reports/)
+  ${p} new <Agent> [what it does]  ${shell ? 'Pi only: type /lab new there' : 'Interview (≤3 questions), write expectations.md and wait for your OK,\n                               then write agent.md and run the lab, fixing only the Job (≤3 runs).\n                               An existing expectations.md is kept untouched.'}
+  ${p} test <Agent>               Guest Main (read-only tools) types the Before lines, opens the agent
+                               with /agent and only its "## Job" text; a black-box Tester below it
+                               types each expectation's Do lines and judges from the screen alone.
+                               ${shell ? 'Add --wait to block until the report (and --keep to leave it open).' : 'Returns at once: a checklist widget follows the run and the result\n                               arrives here as a message. The lab stays open; /lab stop closes it.'}
+  ${p} report <Agent>             The agent's latest report
+  ${p} agents                     Agents here with expectations
+
+Checks (lab-scenarios.md)
   ${p} test                      Every scenario in lab-scenarios.md, each in its own lab
-  ${p} test FILE [N|first|words] One scenario from a file of "## title" sections, one step
-                               per line (a line ending in ? is a question). Words pick the
-                               scenario that contains them, such as /split
+  ${p} test FILE [N|first|words] One scenario from a file of "## title" sections, one step per line
+                               (a line ending in ? is a question). Words pick the scenario, e.g. /split
   ${p} test "<steps>"            A scenario in plain words, one step per sentence or line
+${shell ? '' : `
+  Or ask in plain words; the agent calls the lab tool:
+    Use the lab to run the first check in lab-scenarios.md
+    Use the lab to test the Critic
+`}
+Labs
   ${p} doctor                    Check Herdr, hc, Herdr Lab, Pi, logins, /split and /agent
-  ${p} stop [ID|all]             Close the latest lab (or that one, or all): window, core, files
-  ${p} list                      Labs on this computer${shell ? `
+  ${p} list                      Labs on this computer${shell ? '' : ', with results, and agents here'}
+  ${p} stop [ID|all]             Close the latest lab (or that one, or all): window, core, files${shell ? `
   ${p} start                     Isolate only: open a lab and leave it running, print its ID
   ${p} open|type|keys|read|shot|close …   Drive a started lab by hand (see below)
   ${p} leftovers                 Anything a lab left running or on disk
   ${p} clean                     Delete the cached Herdr Lab.app copy` : ''}
   ${p} --help                    This guide${shell ? '' : '. Adds nothing to the conversation.'}
 
-Options for test${shell ? ' and start' : ''}
-  --model p/id       Model for the lab's Pi panes and the lab agent. Default: $LAB_MODEL,
-                     else your Pi default. Each run uses tokens, so a small model is a good
-                     LAB_MODEL (for example export LAB_MODEL=anthropic/claude-haiku-5-5)
-  --behind           Open the lab window behind your windows
-  --keep             Leave the lab open after the run; ${p} stop closes it
-  --seconds N        Give up on the lab agent after N seconds (default 900)
+Options for test
+  --model p/id         Guest Main, the Tester and a check's lab agent. Default: $LAB_MODEL, else
+                       ${shell ? 'your Pi default' : "this conversation's model"}
+  --agent-model p/id   The agent under test. Default: fast (/agent's small default)
+  --tester-model p/id  The Tester (the judge). Default: --model
+  --behind             Open the lab window behind your windows${shell ? `
+  --wait / --keep      Agent test: wait for the report; keep the lab open afterwards
+  --seconds N          Give up after N seconds (default 900)` : ''}
 
-Extensions that carry over: the lab's Pi panes load /split and /agent wherever they are
-installed (the project's .pi, your Pi extensions or packages), plus LAB_EXTENSIONS (paths
-separated by :). Nothing else from your Pi setup, and never /lab.
+Expectations: agents/<name>/expectations.md. Do lines are typed exactly; Expect/Never are judged by the
+Tester from quoted screen text (a quote that was not on a screen it was shown is rejected); See/Absent
+are checked by the lab itself and override the Tester.
+${FORMAT.split('\n').map(l => '  ' + l).join('\n')}
 
 Examples
   ${p} doctor
-  ${p} test lab-scenarios.md 1
-  ${p} test lab-scenarios.md /split --behind
-  ${p} test "Open a new pane. Run ls in it. Take a screenshot. Close the pane."
+  ${shell ? `${p} test Critic --wait` : `${p} new Critic Check every prompt for missing facts, blast radius and size`}
+  ${p} test Critic --behind
+  ${p} report Critic
+  ${p} test lab-scenarios.md /split
   ${p} stop${shell ? `
 
 Driving by hand (an agent can do this too; ID defaults to the latest lab)
@@ -60,10 +72,60 @@ Driving by hand (an agent can do this too; ID defaults to the latest lab)
   lab close P2
   lab stop
 
-Exit codes for test: 0 all steps passed, 1 a step failed, 2 the lab could not run,
+Exit codes for test: 0 all passed, 1 something failed, 2 the lab could not run,
 130 interrupted (the lab is stopped; with --keep it stays open).` : `
 
-Quitting Pi during a run stops that lab.`}
+Quitting Pi while a lab is opening stops that lab.`}
 
-Reports: ~/.lab/reports/<time>-<id>.md, with screenshots. Each run uses model tokens.`;
+Reports: agents/<name>/reports/<time>-<run>.md (+ .png) for agents; ~/.lab/reports/ for checks.
+Each run uses model tokens.`;
+}
+
+/**
+ * Shown after "/lab ". In pi 1.5.2 Enter applies the highlighted suggestion instead of submitting,
+ * so every value leaves a valid command behind, and typed free text is never swapped for an example.
+ */
+export const EXAMPLES = [
+  { value: '--help', label: '/lab --help', description: 'the guide, with examples; starts nothing' },
+  { value: 'new ', label: '/lab new <Agent> [what it does]', description: 'interview, expectations (your OK), agent.md, lab' },
+  { value: 'test ', label: '/lab test <Agent>', description: 'test an agent against its expectations' },
+  { value: 'report ', label: '/lab report <Agent>', description: "an agent's latest report" },
+  { value: 'test lab-scenarios.md 1', label: '/lab test lab-scenarios.md 1', description: "scenario 1 from the project's scenarios file" },
+  { value: 'doctor', label: '/lab doctor', description: 'check Herdr, hc, Herdr Lab, Pi, /split and /agent' },
+  { value: 'list', label: '/lab list', description: 'labs on this computer, with results' },
+  { value: 'stop', label: '/lab stop', description: 'close the latest lab: window, core, files' },
+];
+export const SUBCOMMANDS = ['new', 'test', 'report', 'doctor', 'list', 'stop', '--help'];
+const TEST_FLAGS = [
+  { value: '--model ', label: '--model provider/id', description: 'guest Main and the Tester' },
+  { value: '--agent-model ', label: '--agent-model provider/id', description: 'the agent under test (default fast)' },
+  { value: '--tester-model ', label: '--tester-model provider/id', description: 'the judge' },
+  { value: '--behind', label: '--behind', description: 'open the lab window behind yours' },
+];
+
+export function completions(prefix, agents = () => []) {
+  if (prefix === '') return EXAMPLES;
+  const words = prefix.split(' ');
+  if (words.length === 1) {
+    const hits = SUBCOMMANDS.filter(s => s.startsWith(prefix) && s !== prefix);
+    return hits.length ? hits.map(s => EXAMPLES.find(e => e.value.trim() === s) ?? { value: s, label: `/lab ${s}` }) : null;
+  }
+  const [sub, ...rest] = words;
+  const arg = rest.join(' ');
+  if (['test', 'report', 'new'].includes(sub) && rest.length === 1) {
+    // Agent names with expectations (for new too: growing one keeps its file and writes agent.md).
+    const names = agents().filter(n => n.toLowerCase().startsWith(arg.toLowerCase()) && n.toLowerCase() !== arg.toLowerCase());
+    if (!names.length) return null;
+    const keep = arg ? [{ value: prefix, label: arg, description: 'what I typed' }] : [];
+    return [...keep, ...names.map(n => ({ value: `${sub} ${n}${sub === 'test' ? ' ' : ''}`, label: n, description: sub === 'new' ? 'has expectations: write agent.md' : 'has expectations' }))];
+  }
+  if (sub === 'test' && rest.length >= 2 && !/\.md$/i.test(rest[0])) {
+    const last = rest.at(-1);
+    if (last !== '' && !last.startsWith('-')) return null;
+    const used = new Set(rest);
+    const head = prefix.slice(0, prefix.length - last.length);
+    const flags = TEST_FLAGS.filter(f => !used.has(f.value.trim()) && f.value.startsWith(last) && f.value.trim() !== last);
+    return flags.length ? flags.map(f => ({ ...f, value: head + f.value })) : null;
+  }
+  return null;
 }
