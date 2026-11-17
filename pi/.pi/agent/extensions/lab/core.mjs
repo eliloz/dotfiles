@@ -42,6 +42,7 @@ export function dirs(id) {
   const sock = path.join(SOCK_ROOT, id);
   return {
     root, run: path.join(root, 'run.json'), captured: path.join(root, 'captured.txt'),
+    results: path.join(root, 'results.json'), expectations: path.join(root, 'expectations.md'),
     profile: path.join(root, 'pi-agent'), judgeProfile: path.join(root, 'judge-agent'), judgeCwd: path.join(root, 'judge-cwd'),
     tmp: path.join(root, 'tmp'), app: path.join(root, 'app'), config: path.join(root, 'config'), logs: path.join(root, 'logs'), shots: path.join(root, 'shots'),
     sock, state: path.join(sock, 'st'), coreSocket: path.join(sock, 'st', 'herdr-core', id, `${id}.sock`),
@@ -50,6 +51,14 @@ export function dirs(id) {
 export const readRun = id => readJson(dirs(id).run, undefined);
 export const writeRun = (id, patch) => { const next = { ...(readRun(id) || {}), ...patch, updated: new Date().toISOString() }; writeJson(dirs(id).run, next); return next; };
 export const coreUp = id => fs.existsSync(dirs(id).coreSocket);
+/** An agent lab's checklist: { items: [{ id, title, verdict, … }], result, summary, report }. Only the Tester writes it. */
+export const readResults = id => readJson(dirs(id).results, undefined);
+export const writeResults = (id, v) => writeJson(dirs(id).results, v);
+export function tally(s) {
+  const c = { pass: 0, fail: 0, pending: 0, total: s?.items?.length || 0 };
+  for (const i of s?.items || []) c[i.verdict === 'pass' ? 'pass' : i.verdict === 'fail' ? 'fail' : 'pending']++;
+  return c;
+}
 
 /** The lab's environment: yours, minus anything naming another Herdr core, window or Pi profile. */
 export function env(id, extra = {}) {
@@ -367,9 +376,11 @@ export async function startAgentLab(o = {}, progress = () => {}) {
   const id = newLab(project, {
     kind: 'agent', agent: name, folder: loc.folder, expectations: loc.file, model, agentModel, testerModel: o.testerModel || model,
     tools: [agentExt], work, jobChars: agentJob.length,
-    items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })),
   });
   o.onId?.(id);
+  // The Tester reads this snapshot (through its tools' code, never a file tool), so edits during a run don't count.
+  fs.copyFileSync(loc.file, dirs(id).expectations);
+  writeResults(id, { items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })), result: null });
   try {
     await openLab(id, { behind: o.behind, agentFolder: loc.folder, withheld: [loc.file] }, progress);
     const d = dirs(id), r = readRun(id);
@@ -422,7 +433,7 @@ export async function startAgentLab(o = {}, progress = () => {}) {
     const testerArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
       '--no-extensions', '-e', TESTER, '--tools', TESTER_TOOLS.join(','),
       '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-mcp', '--no-session', '--name', 'Tester',
-      '--model', o.testerModel || model, '--append-system-prompt', path.join(HERE, 'tester', 'prompt.md'), '--lab-run', id, 'Begin the black-box test.'];
+      '--model', o.testerModel || model, '--append-system-prompt', path.join(HERE, 'tester', 'prompt.md'), '--lab-run', id, `Begin the black-box test: ${spec.items.length} expectation${spec.items.length === 1 ? '' : 's'}.`];
     const before = new Set(panes(id).map(p => p.terminal));
     appJson(id, ['do', 'pane.split', JSON.stringify({ pane: opened.pane, direction: 'down', argv: testerArgv })], { timeout: 20000 });
     const tester = await until(() => panes(id).find(p => !before.has(p.terminal)), 30, 'the Tester pane');
@@ -463,7 +474,7 @@ function pane(id, name) {
 export const screen = (id, terminal, lines = 0) =>
   hc(id, ['read', terminal, ...(lines ? ['--lines', String(lines)] : [])], { check: false, timeout: 15000 }).replace(/\u001b\[[0-9;?]*[ -\/]*[@-~]/g, '');
 // A fullscreen Pi pads its screen with blank rows; squeeze them so the end of the screen is the conversation.
-const tail = (s, n) => s.split('\n').map(l => l.trimEnd()).filter((l, i, a) => l || a[i - 1]).join('\n').trim().split('\n').slice(-n).join('\n');
+export const lastLines = (s, n) => s.split('\n').map(l => l.trimEnd()).filter((l, i, a) => l || a[i - 1]).join('\n').trim().split('\n').slice(-n).join('\n');
 
 /** Wait until no pane's screen has changed for `quiet` seconds. */
 export async function settle(id, { quiet = 2, seconds = 120 } = {}) {
@@ -518,7 +529,7 @@ export async function sendLine(id, terminal, text, all, opt = {}) {
 /** Read the visible text of one pane, or every pane. What it returns is recorded as evidence. */
 export function read(id, name, lines = 40) {
   const list = name ? [pane(id, name)] : panes(id);
-  return record(id, [`[lab] panes now: ${paneList(id)}`, ...list.map(p => `--- ${p.name}: visible text (last ${lines} lines) ---\n${tail(screen(id, p.terminal), lines) || '(blank)'}`)].join('\n'));
+  return record(id, [`[lab] panes now: ${paneList(id)}`, ...list.map(p => `--- ${p.name}: visible text (last ${lines} lines) ---\n${lastLines(screen(id, p.terminal), lines) || '(blank)'}`)].join('\n'));
 }
 
 // ---------- transcripts (from the lab profile's Pi sessions) ----------

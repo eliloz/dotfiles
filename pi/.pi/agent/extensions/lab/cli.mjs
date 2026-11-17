@@ -5,6 +5,7 @@ import path from 'node:path';
 import * as core from './core.mjs';
 import { help } from './help.mjs';
 import { testTarget } from './expectations.mjs';
+import { headline } from './report.mjs';
 
 function parse(argv) {
   const o = { _: [] };
@@ -17,6 +18,7 @@ function parse(argv) {
     else if (a === '--run') o.run = argv[++i];
     else if (a === '--seconds') o.seconds = Number(argv[++i]);
     else if (a === '--keep') o.keep = true;
+    else if (a === '--wait') o.wait = true;
     else if (a === '--behind') o.behind = true;
     else if (a === '--json') o.json = true;
     else if (a === '-h' || a === '--help') o.help = true;
@@ -103,17 +105,39 @@ async function testCmd(o) {
   return worst;
 }
 
-/** lab test <Agent>: open the agent's lab (Main, Before, /agent, then the Tester). It stays open for you to look. */
+/**
+ * lab test <Agent>: open the agent's lab (Main, Before, /agent, then the Tester). It stays open for you to look.
+ * With --wait: block until the Tester has written its report, print the verdicts, then stop the lab (--keep: leave it open).
+ */
 async function agentCmd(o, name) {
-  const onId = stopOnSignal({}); // Ctrl-C while it opens stops the lab
+  const onId = stopOnSignal(o.wait ? o : {}); // Ctrl-C while it opens (or waits) stops the lab
   const id = await core.startAgentLab({ name, model: o.model, agentModel: o.agentModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
   const r = core.readRun(id);
   console.log([`Lab ${id} for ${r.agent}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
     `Panes: ${core.panes(id).map(p => `${p.name} (${p.terminal})`).join(', ')}`,
     `Models: Main ${r.model} · ${r.agent} ${r.agentModel} · Tester ${r.testerModel}`,
     `${r.agent}'s job arrived whole: ${r.jobArrived ? 'yes' : 'no'} (${r.jobChars} characters)`,
-    `Close it with: lab stop ${id}`].join('\n'));
-  return 0;
+    ...(o.wait ? [] : [`Close it with: lab stop ${id}`])].join('\n'));
+  if (!o.wait || r.phase !== 'testing') return 0;
+  const res = await waitForTester(id, o.seconds || 900);
+  if (interrupted) await interrupted;
+  if (!core.readRun(id)) { console.log(`${id} was stopped during the run, so there is no report.`); return 2; }
+  const lines = res?.report
+    ? [`${r.agent}: ${headline(res)}`, ...res.items.map(i => `${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}${i.reason ? `\n     ${i.reason}` : ''}`), `Report: ${res.report}`]
+    : [`${r.agent}: unfinished · the Tester did not call lab_finish within ${o.seconds || 900} s`];
+  if (o.keep) lines.push(`The lab is still open (--keep). Close it with: lab stop ${id}`);
+  else lines.push(await stopText(id));
+  console.log(lines.join('\n') + '\n');
+  return !res?.report ? 2 : res.result === 'pass' ? 0 : 1;
+}
+
+async function waitForTester(id, seconds) {
+  const end = Date.now() + seconds * 1000;
+  for (;;) {
+    const res = core.readResults(id);
+    if (res?.report || !core.readRun(id) || Date.now() > end) return res;
+    await core.sleep(1000);
+  }
 }
 
 async function runScenario(o, scenario, withheld) {

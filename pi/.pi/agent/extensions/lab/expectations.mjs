@@ -128,3 +128,25 @@ export function testTarget(args, isFile) {
   if (args.length === 1 && NAME.test(first)) return { kind: 'agent', name: first };
   return { kind: 'words', text: args.join('\n') };
 }
+
+/**
+ * One verdict, decided by the lab. `given` maps a pane to the screen text the Tester was shown during
+ * this expectation (its quotes must come from there: screen only, no transcript); `saw` maps a pane to
+ * every screen the lab read during it (See/Absent are checked there). Throws, for the Tester to fix,
+ * on a quote it was not shown, an "absent" claim that is on screen, or a pass without a quote.
+ * Returns { verdict, observed: [{ kind, pane, text, ok }] }. See/Absent override the Tester's verdict.
+ */
+export function decide(item, p, given, saw) {
+  const on = (pool, pane) => {
+    const key = Object.keys(pool).find(k => k.toLowerCase() === String(pane).trim().toLowerCase());
+    return key === undefined ? undefined : [].concat(pool[key]).join('\n');
+  };
+  const bad = (p.evidence || []).filter(e => { const s = on(given, e.pane); return s === undefined || !contains(s, e.quote); });
+  if (bad.length) throw Error(`Not on a screen you were shown, so not evidence: ${bad.map(e => `${e.pane}: "${e.quote}"`).join('; ')}. Quote exactly from a lab_do or lab_look screen, or fail the expectation.`);
+  const there = (p.absent || []).filter(a => contains(on(saw, a.pane) || '', a.text));
+  if (there.length) throw Error(`These ARE on screen: ${there.map(a => `${a.pane}: "${a.text}"`).join('; ')}. Re-check before claiming they are absent.`);
+  if (judged(item).length && p.verdict === 'pass' && !(p.evidence || []).length) throw Error('A pass needs at least one quote from the screen.');
+  const obs = observed(item).map(l => { const found = contains(on(saw, l.pane) || '', l.text); return { kind: l.kind, pane: l.pane, text: l.text, ok: l.kind === 'see' ? found : !found }; });
+  const judgedOk = judged(item).length ? p.verdict === 'pass' : true;
+  return { verdict: judgedOk && obs.every(o => o.ok) ? 'pass' : 'fail', observed: obs };
+}
