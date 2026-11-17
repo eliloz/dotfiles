@@ -359,6 +359,59 @@ export function read(id, name, lines = 40) {
   return record(id, [`[lab] panes now: ${paneList(id)}`, ...list.map(p => `--- ${p.name}: visible text (last ${lines} lines) ---\n${tail(screen(id, p.terminal), lines) || '(blank)'}`)].join('\n'));
 }
 
+// ---------- transcripts (from the lab profile's Pi sessions) ----------
+
+/** Session entry types written by our /agent extension (agent/fork.ts OWNER, agent/index.ts the rest). */
+export const MARK = { owner: 'agent-identity', watch: 'agent-watch', direct: 'agent-direct', note: 'agent-note', inbox: 'agent-inbox' };
+
+export const readSession = file => fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return {}; } });
+const sessionName = entries => entries.filter(e => e.type === 'session_info').at(-1)?.name;
+const textOf = m => typeof m.content === 'string' ? m.content : (m.content || []).filter(b => b?.type === 'text').map(b => b.text).join('\n');
+const squash1 = s => String(s).replace(/\s+/g, ' ').trim();
+
+/**
+ * What a pane showed, from its session entries: prompts, replies and /agent events, as text.
+ * For an agent, everything up to and including its owner entry (the forked history, its job, its name)
+ * is left out, and so are `system` messages (Pi saves the system prompt, which holds the job). If the
+ * job's text still turns up (an agent quoting it), it is replaced, so the Tester never reads it.
+ */
+export function transcriptOf(entries, pane) {
+  const ownerAt = entries.findLastIndex(e => e.type === 'custom' && e.customType === MARK.owner);
+  const job = ownerAt >= 0 ? squash1(entries[ownerAt].data?.job || '') : '';
+  const hide = t => job && squash1(t).includes(job) ? squash1(t).split(job).join('(the agent\'s job, withheld)') : t;
+  const out = [];
+  const add = (e, who, text) => { if (String(text).trim()) out.push({ at: e.timestamp, who, text: hide(String(text).trim()) }); };
+  for (const e of entries.slice(ownerAt + 1)) {
+    if (e.type === 'message') {
+      const m = e.message || {};
+      if (m.role === 'user') add(e, 'typed', textOf(m));
+      else if (m.role === 'assistant') add(e, pane, textOf(m));
+    } else if (e.type === 'custom_message' && e.customType === MARK.watch) add(e, 'lab', '(Main\'s conversation reached this agent)');
+    else if (e.type === 'custom_message' && e.customType === MARK.direct) add(e, 'lab', `(a message sent from Main with /agent send: ${String(e.content).replace(/^Message from the person in Main, sent to you directly:\n/, '')})`);
+    else if (e.type === 'custom' && e.customType === MARK.note) add(e, 'lab', `(a note from ${e.data?.name || 'an agent'} arrived and waits for the next prompt: ${String(e.data?.text || '').slice(0, 300)})`);
+    else if (e.type === 'custom_message' && e.customType === MARK.inbox) { const n = e.details?.ids?.length || 0; add(e, 'lab', `(${n} agent note${n === 1 ? '' : 's'} joined this prompt)`); }
+  }
+  return out;
+}
+
+/** The newest session file in a Pi profile whose name (session_info) is `pane`, any case. */
+export function sessionFile(profile, pane) {
+  const root = path.join(profile, 'sessions');
+  if (!fs.existsSync(root)) return undefined;
+  const files = fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory())
+    .flatMap(d => fs.readdirSync(path.join(root, d.name)).filter(f => f.endsWith('.jsonl')).map(f => path.join(root, d.name, f)));
+  const want = String(pane).toLowerCase();
+  return files.filter(f => String(sessionName(readSession(f))).toLowerCase() === want)
+    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+}
+
+/** What a lab pane (Main, or an agent by name) has shown since it started. Empty if no session has that name. */
+export function transcript(id, pane) {
+  const f = sessionFile(dirs(id).profile, pane);
+  return f ? transcriptOf(readSession(f), pane) : [];
+}
+export const transcriptText = items => items.map(i => `[${i.who}] ${i.text}`).join('\n\n');
+
 /**
  * XDG_CONFIG_HOME points at the lab's folder only so the lab core reads its own config.toml (the core
  * has no other setting for it). Programs in lab panes get yours back, so tools that keep their config
