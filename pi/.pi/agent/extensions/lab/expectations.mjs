@@ -41,7 +41,6 @@ export function parse(markdown, agent = 'Agent') {
     if (h2) {
       const title = h2[1].replace(/^\d+[.)]\s*/, '').trim();
       if (BEFORE.test(title)) {
-        if (out.items.length) throw Error(`Line ${n}: "## ${title}" must come before the first expectation.`);
         section = { setup: true, lines: out.before };
       } else { const item = { id: out.items.length + 1, title, lines: [] }; out.items.push(item); section = item; }
       continue;
@@ -58,9 +57,8 @@ export function parse(markdown, agent = 'Agent') {
     let pane = (m[2] || (kind === 'do' ? 'Main' : 'Agent')).trim();
     if (/^agent$/i.test(pane) || pane.toLowerCase() === agent.toLowerCase()) pane = agent;
     else if (/^main$/i.test(pane)) pane = 'Main';
-    else throw Error(`Line ${n}: the pane in brackets is Main or ${agent}, not "${pane}".`);
+    // Any other pane name is kept; the lab notes it (extraPanes) and does not open it, like herdr-pi-lab.
     if (section.setup && kind !== 'do' && kind !== 'run') throw Error(`Line ${n}: the Before section only holds Do and Run lines.`);
-    if (section.setup && kind === 'do' && pane !== 'Main') throw Error(`Line ${n}: Before runs before ${agent} opens, so its Do lines go to Main.`);
     if (kind === 'run' && !section.setup) throw Error(`Line ${n}: Run lines belong under "## Before"; the lab runs them before the first prompt.`);
     if (kind === 'run') { section.lines.push({ kind, pane: 'lab', text: m[3].trim(), line: n }); continue; }
     const text = kind === 'see' || kind === 'absent' ? unquote(m[3]) : m[3].trim();
@@ -75,6 +73,13 @@ export function parse(markdown, agent = 'Agent') {
 export const judged = item => item.lines.filter(l => l.kind === 'expect' || l.kind === 'never');
 export const observed = item => item.lines.filter(l => l.kind === 'see' || l.kind === 'absent');
 export const steps = item => item.lines.filter(l => l.kind === 'do');
+
+/** Panes named in the file other than Main and the agent: the lab does not open them, it says so. */
+export function extraPanes(spec, agent) {
+  const all = new Set([...spec.before, ...spec.items.flatMap(i => i.lines)].map(l => l.pane));
+  for (const p of ['Main', agent, 'lab']) all.delete(p);
+  return [...all];
+}
 
 /** Terminal text wraps, pads and decorates lines: compare letters and digits only. */
 export const fold = text => String(text).normalize('NFKC').toLowerCase().replace(/[’‘]/g, "'").replace(/[^\p{L}\p{N}]+/gu, '');
@@ -92,17 +97,17 @@ export function locate(project, name) {
 }
 
 /**
- * The agent's job: the "## Job" section of agent.md, whitespace collapsed (the same rule as /agent's
- * saved.mjs). undefined when there is no agent.md; an error when it has no usable Job section.
+ * The agent's job: the "## Job" section of agent.md, whitespace collapsed. Without a "## Job" heading,
+ * the whole file minus its title (herdr-pi-lab). undefined when there is no agent.md.
  */
 export function job(dir) {
   const file = path.join(dir, 'agent.md');
   if (!fs.existsSync(file)) return undefined;
-  const m = /^##[ \t]+Job[ \t]*\r?\n([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(fs.readFileSync(file, 'utf8'));
+  const text = fs.readFileSync(file, 'utf8');
+  const m = /^##[ \t]+Job[ \t]*\r?\n([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(text);
   const shown = `agents/${path.basename(dir)}/agent.md`;
-  if (!m) throw Error(`${shown} has no "## Job" section. Add one: a paragraph telling the agent what to do.`);
-  const body = m[1].replace(/\s+/g, ' ').trim();
-  if (!body) throw Error(`${shown}: the "## Job" section is empty. Write what the agent should do under it.`);
+  const body = (m ? m[1] : text.replace(/^#.*$/m, '')).replace(/\s+/g, ' ').trim();
+  if (!body) throw Error(`${shown} needs a "## Job" section: one paragraph telling the agent what to do.`);
   if (body.length > 2400) throw Error(`${shown}: the Job section is ${body.length.toLocaleString('en-US')} characters; /agent accepts up to 2,400.`);
   return body;
 }

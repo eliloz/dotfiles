@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parse, contains, judged, observed, steps, job, access, locate } from '../expectations.mjs';
+import { parse, contains, judged, observed, steps, job, access, locate, extraPanes } from '../expectations.mjs';
 
 // John's agents/critic/expectations.md (lesson, S04E01).
 const critic = `# Critic expectations
@@ -60,9 +60,17 @@ test('mistakes name the line and say how to fix them', () => {
   assert.throws(() => parse('# Only a title', 'Critic'), /No expectations yet/);
   assert.throws(() => parse('## Before\nExpect: x\n## A\nExpect: y', 'Critic'), /Line 2: the Before section only holds Do and Run/);
   assert.throws(() => parse('## A\nRun: rm -rf x\nExpect: y', 'Critic'), /Line 2: Run lines belong under "## Before"/);
-  assert.throws(() => parse('## A\nExpect (Tester): y', 'Critic'), /Line 2: the pane in brackets is Main or Critic/);
-  assert.throws(() => parse('## Before\nDo (Critic): hi\n## A\nExpect: y', 'Critic'), /Line 2: Before runs before Critic opens/);
-  assert.throws(() => parse('## A\nExpect: y\n## Before\nDo: hi', 'Critic'), /Line 3: "## Before" must come before/);
+});
+
+test('like herdr-pi-lab: another pane name is kept and listed, Before may come anywhere', () => {
+  const s = parse('## A\nExpect (Tester): y\nSee (Main): "z"', 'Critic');
+  assert.equal(s.items[0].lines[0].pane, 'Tester');
+  assert.deepEqual(extraPanes(s, 'Critic'), ['Tester']);
+  assert.deepEqual(extraPanes(parse(critic, 'Critic'), 'Critic'), []);
+  const late = parse('## A\nExpect: y\n## Before\nDo: hi', 'Critic');
+  assert.deepEqual(late.before.map(l => l.text), ['hi']);
+  // A Before Do line for the agent parses; startAgentLab refuses it when the lab runs (as herdr-pi-lab's start does).
+  assert.equal(parse('## Before\nDo (Critic): hi\n## A\nExpect: y', 'Critic').before[0].pane, 'Critic');
 });
 
 test('Run lines in Before are setup the lab runs, typed by no one', () => {
@@ -85,10 +93,11 @@ test('the job is the "## Job" section of agent.md, as /agent reads it', () => {
     assert.equal(job(d), undefined);
     fs.writeFileSync(path.join(d, 'agent.md'), '# Repeater\n\n## Job\nRepeat Main\'s last prompt\nin five words.\n\n## Use it when\n- testing\n');
     assert.equal(job(d), "Repeat Main's last prompt in five words.");
+    // No "## Job" heading: the whole file minus its title, as herdr-pi-lab reads it.
     fs.writeFileSync(path.join(d, 'agent.md'), '# Repeater\nJust prose.\n');
-    assert.throws(() => job(d), /has no "## Job" section/);
+    assert.equal(job(d), 'Just prose.');
     fs.writeFileSync(path.join(d, 'agent.md'), '# Repeater\n## Job\n\n## Examples\n');
-    assert.throws(() => job(d), /is empty/);
+    assert.throws(() => job(d), /needs a "## Job" section/);
     fs.writeFileSync(path.join(d, 'agent.md'), `## Job\n${'x'.repeat(2401)}\n`);
     assert.throws(() => job(d), /2,401 characters/);
   } finally { fs.rmSync(d, { recursive: true, force: true }); }

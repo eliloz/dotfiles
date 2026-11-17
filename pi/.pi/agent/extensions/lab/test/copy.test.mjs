@@ -54,3 +54,9 @@ test('a real copy holds the agent\'s knowledge files and nothing that tests or i
     assert.deepEqual(all(forCheck), ['GLOSSARY.md', 'src/bookings.ts']);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('like herdr-pi-lab: reports and build or cache folders stay out anywhere', () => {
+  for (const f of ['node_modules/x/index.js', 'web/.next/cache.json', 'dist/app.js', 'docs/reports/q3.md', 'py/__pycache__/a.pyc'])
+    assert.equal(leaveOutReason(f), 'generated', f);
+  for (const f of ['src/build.ts', 'docs/report.md', 'src/dist-utils.ts']) assert.equal(leaveOutReason(f), undefined, f);
+});

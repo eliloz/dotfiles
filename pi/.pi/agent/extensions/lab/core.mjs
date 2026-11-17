@@ -12,7 +12,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parse, locate, job, access } from './expectations.mjs';
+import { parse, locate, job, access, extraPanes } from './expectations.mjs';
 
 export const HERE = path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)));
 export const LAB_HOME = process.env.LAB_HOME || path.join(os.homedir(), '.lab');
@@ -144,7 +144,8 @@ function piProfile(dir) {
     if (fs.existsSync(a)) fs.symlinkSync(fs.realpathSync(a), path.join(dir, f));
   }
   const s = readJson(path.join(DAILY_PI, 'settings.json'), {});
-  const keep = ['lastChangelogVersion', 'defaultProvider', 'defaultModel', 'defaultThinkingLevel', 'enabledModels', 'theme'];
+  // herdr-pi-lab's list. No default model: every lab pane is started with --model.
+  const keep = ['lastChangelogVersion', 'warnings', 'enabledModels', 'modelThinkingLevels', 'theme', 'quietStartup', 'defaultThinkingLevel'];
   writeJson(path.join(dir, 'settings.json'), { ...Object.fromEntries(keep.filter(k => k in s).map(k => [k, s[k]])), quietStartup: true, enableInstallTelemetry: false });
 }
 
@@ -187,6 +188,8 @@ const LEAVE_OUT = [
   ['secret', /(^|\/)\.env($|\.|rc$)|(^|\/)\.(netrc|npmrc|pypirc)$|(^|\/)id_[^/]*$|\.(pem|key|p12|pfx|jks|keystore|asc|gpg)$|(^|\/)([^/]*[-_.])?(auth|credentials?|secrets?|tokens?|passwords?)([-_.][^/]*)?\.(json|ya?ml|toml|txt|ini)$|(^|\/)service[-_]?account[^/]*\.json$/i],
   ['agent', /(^|\/)(AGENTS|CLAUDE|GEMINI)(\.override)?\.md$|(^|\/)\.(pi|claude|cursor|codex|gemini|windsurf|aider[^/]*)(\/|$)|^(agents|roles)(\/|$)|(^|\/)(agents|roles)\/(.*\/)?[^/]*\.md$|(^|\/)\.cursorrules$|copilot-instructions\.md$/i],
   ['expectations', /expectation|(^|\/)lab-scenarios\.md$|(^|\/)lab-reports(\/|$)/i],
+  // herdr-pi-lab's SKIP list: reports and build or cache folders, wherever they are.
+  ['generated', /(^|\/)(reports|node_modules|\.cache|dist|build|\.next|\.venv|__pycache__)(\/|$)/i],
 ];
 /**
  * Why a project file (path relative to the project) stays out of the lab copy, or undefined when it goes in.
@@ -218,7 +221,7 @@ export function copyProject(project, dest, withheld = [], agentFolder) {
   const ls = spawnSync('git', ['-C', project, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 << 20 });
   if (ls.status !== 0) throw Error(`${project} is not a git repository, so it has no tracked files to copy. Run the lab from inside a git project.`);
   const never = new Set(withheld.map(w => path.relative(project, path.resolve(project, w))));
-  const left = { git: [], secret: [], agent: [], expectations: [], withheld: [], other: [] };
+  const left = { git: [], secret: [], agent: [], expectations: [], generated: [], withheld: [], other: [] };
   let copied = 0, bytes = 0;
   mkdir(dest);
   for (const f of ls.stdout.split('\0').filter(Boolean)) {
@@ -228,7 +231,9 @@ export function copyProject(project, dest, withheld = [], agentFolder) {
     const a = path.join(project, f);
     let s; try { s = fs.lstatSync(a); } catch { left.other.push(`${f} (missing on disk)`); continue; }
     if (!s.isFile()) { left.other.push(`${f} (${s.isSymbolicLink() ? 'symlink' : 'not a file'})`); continue; }
-    if (s.size > 5 << 20) { left.other.push(`${f} (over 5 MB)`); continue; }
+    // herdr-pi-lab's limits: 2 MB a file, 40 MB in all.
+    if (s.size > 2 << 20) { left.other.push(`${f} (over 2 MB)`); continue; }
+    if (bytes + s.size > 40 << 20) { left.other.push(`${f} (the copy reached 40 MB)`); continue; }
     mkdir(path.dirname(path.join(dest, f)));
     fs.copyFileSync(a, path.join(dest, f));
     fs.chmodSync(path.join(dest, f), s.mode & 0o777);
@@ -390,6 +395,7 @@ export async function startAgentLab(o = {}, progress = () => {}) {
       if (res.status !== 0) throw Error(`Before (line ${step.line}): "${step.text}" exited ${res.status ?? res.signal}: ${(res.stderr || res.stdout || '').trim().slice(-400) || 'no output'}`);
     }
     for (const step of spec.before.filter(s => s.kind === 'do')) {
+      if (step.pane !== 'Main') throw Error(`Before steps run in Main only (line ${step.line}).`);
       progress(`Before: ${step.text.slice(0, 60)}`);
       await sendLine(id, main, step.text, [main], { quiet: 2 });
     }
@@ -411,15 +417,17 @@ export async function startAgentLab(o = {}, progress = () => {}) {
 
     if (!fs.existsSync(TESTER)) { progress('The Tester is not built yet; the lab stops here, open for you to look'); return id; }
     progress('Opening the Tester');
-    const testerArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.judgeProfile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
+    // Like herdr-pi-lab: the Tester starts where the split puts it (the project copy) with the lab's Pi profile.
+    // Its tool limits keep it out of the files: only lab_* tools, no context files, no session (lesson line 223).
+    const testerArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
       '--no-extensions', '-e', TESTER, '--tools', TESTER_TOOLS.join(','),
       '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-mcp', '--no-session', '--name', 'Tester',
       '--model', o.testerModel || model, '--append-system-prompt', path.join(HERE, 'tester', 'prompt.md'), '--lab-run', id, 'Begin the black-box test.'];
     const before = new Set(panes(id).map(p => p.terminal));
-    // In the Tester's own empty folder, so it never starts inside the project copy.
-    appJson(id, ['do', 'pane.split', JSON.stringify({ pane: opened.pane, direction: 'down', argv: ['/bin/sh', '-c', 'cd "$1" && shift && exec "$@"', 'lab', d.judgeCwd, ...testerArgv] })], { timeout: 20000 });
+    appJson(id, ['do', 'pane.split', JSON.stringify({ pane: opened.pane, direction: 'down', argv: testerArgv })], { timeout: 20000 });
     const tester = await until(() => panes(id).find(p => !before.has(p.terminal)), 30, 'the Tester pane');
     hc(id, ['label', tester.terminal, 'lab.pane=Tester'], { check: false });
+    for (const extra of extraPanes(spec, name)) progress(`Note: the file names a pane "${extra}" that this lab does not open.`);
     writeRun(id, { phase: 'testing', panes: { Main: main, [name]: opened.terminal, Tester: tester.terminal } });
     return id;
   } catch (err) { throw await failed(id, o, err); }
