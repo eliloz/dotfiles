@@ -12,6 +12,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { parse, locate, job, access } from './expectations.mjs';
 
 export const HERE = path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)));
 export const LAB_HOME = process.env.LAB_HOME || path.join(os.homedir(), '.lab');
@@ -42,7 +43,7 @@ export function dirs(id) {
   return {
     root, run: path.join(root, 'run.json'), captured: path.join(root, 'captured.txt'),
     profile: path.join(root, 'pi-agent'), judgeProfile: path.join(root, 'judge-agent'), judgeCwd: path.join(root, 'judge-cwd'),
-    app: path.join(root, 'app'), config: path.join(root, 'config'), logs: path.join(root, 'logs'), shots: path.join(root, 'shots'),
+    tmp: path.join(root, 'tmp'), app: path.join(root, 'app'), config: path.join(root, 'config'), logs: path.join(root, 'logs'), shots: path.join(root, 'shots'),
     sock, state: path.join(sock, 'st'), coreSocket: path.join(sock, 'st', 'herdr-core', id, `${id}.sock`),
   };
 }
@@ -254,6 +255,55 @@ function findAppPid(id) {
   }
 }
 
+/** A new lab id with its run folder, before anything is started. */
+function newLab(project, patch) {
+  const id = `lab-${randomBytes(3).toString('hex')}`;
+  const d = dirs(id);
+  const projectName = (path.basename(project).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^\.+/, '') || 'project').slice(0, 40);
+  for (const p of [d.root, d.logs, d.config, d.app, d.shots, d.judgeCwd, d.state, d.tmp]) mkdir(p);
+  writeRun(id, { id, project, copy: path.join(d.root, projectName), created: new Date().toISOString(), phase: 'starting', panes: {}, made: [], ...patch });
+  fs.writeFileSync(d.captured, '');
+  return id;
+}
+
+/** Copy the project, make the Pi profiles, start the private core and open the Herdr Lab window (no panes yet). */
+async function openLab(id, o, progress) {
+  const d = dirs(id), r = readRun(id);
+  progress('Copying the project (tracked files only)');
+  const copied = copyProject(r.project, r.copy, o.withheld || [], o.agentFolder);
+  writeRun(id, { copied, made: ['run folder', 'project copy'] });
+
+  progress('Making the lab Pi profiles (linked to your model logins)');
+  piProfile(d.profile); piProfile(d.judgeProfile);
+  mkdir(path.join(d.config, 'herdr-core'));
+  fs.writeFileSync(path.join(d.config, 'herdr-core', 'config.toml'), `notes = false\nshell = ${JSON.stringify(userShell())}\n`);
+
+  progress('Preparing the Herdr Lab app copy');
+  const a = labApp();
+  appHome(d.app);
+  writeRun(id, { app: a });
+
+  progress(`Starting core ${id}`);
+  hc(id, ['server', 'start'], { timeout: 20000 });
+  const status = hcJson(id, ['server', 'status']);
+  writeRun(id, { corePid: status?.pid, coreId: status?.core?.id, made: ['run folder', 'project copy', 'core'] });
+
+  progress('Opening the Herdr Lab window');
+  const vars = ['HC_SESSION', 'XDG_STATE_HOME', 'XDG_CONFIG_HOME', 'HERDR_APP_HOME', 'HERDR_APP_NO_SOUND', 'HERDR_TELEMETRY', 'HERDR_RELEASES_URL', 'PI_CODING_AGENT_DIR', 'PI_SKIP_VERSION_CHECK', 'LAB_RUN'];
+  const e = env(id), log = path.join(d.logs, 'app.log');
+  exec('/usr/bin/open', ['-n', ...(o.behind ? ['-g'] : []), '-a', a.bundle, ...vars.flatMap(k => ['--env', `${k}=${e[k]}`]), '--stdout', log, '--stderr', log], { id });
+  // A freshly signed copy is verified by macOS on its first launch, which can take a while.
+  await until(() => appJson(id, ['status'], { check: false, timeout: 5000 }), 120, 'the Herdr Lab window');
+  writeRun(id, { appPid: findAppPid(id), made: ['run folder', 'project copy', 'core', 'window'] });
+}
+
+async function failed(id, o, err) {
+  writeRun(id, { phase: 'failed', error: err.message });
+  if (!o.keepOnError) await stopLab(id).catch(() => {});
+  err.run = id;
+  return err;
+}
+
 /**
  * Isolate: copy the project, make the Pi profiles, start a private core and the Herdr Lab window,
  * and open pane P1 (a shell in the copy). Returns the run id. On any failure the lab is stopped.
@@ -265,53 +315,120 @@ export async function startLab(o = {}, progress = () => {}) {
   const model = o.model || defaultModel();
   if (!model) throw Error('No model given and no default model in your Pi settings. Pass --model provider/id');
   need('hc'); need('herdr-app'); need('pi');
-
-  const id = `lab-${randomBytes(3).toString('hex')}`;
-  const d = dirs(id);
-  const projectName = (path.basename(project).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^\.+/, '') || 'project').slice(0, 40);
-  const copy = path.join(d.root, projectName);
-  for (const p of [d.root, d.logs, d.config, d.app, d.shots, d.judgeCwd, d.state]) mkdir(p);
-  writeRun(id, { id, project, copy, model, tools, created: new Date().toISOString(), phase: 'starting', panes: {}, made: [] });
+  const id = newLab(project, { model, tools });
   o.onId?.(id);
-  fs.writeFileSync(d.captured, '');
   try {
-    progress('Copying the project (tracked files only)');
-    const copied = copyProject(project, copy, o.withheld || []);
-    writeRun(id, { copied, made: ['run folder', 'project copy'] });
-
-    progress('Making the lab Pi profiles (linked to your model logins)');
-    piProfile(d.profile); piProfile(d.judgeProfile);
-    mkdir(path.join(d.config, 'herdr-core'));
-    fs.writeFileSync(path.join(d.config, 'herdr-core', 'config.toml'), `notes = false\nshell = ${JSON.stringify(userShell())}\n`);
-
-    progress('Preparing the Herdr Lab app copy');
-    const a = labApp();
-    appHome(d.app);
-    writeRun(id, { app: a });
-
-    progress(`Starting core ${id}`);
-    hc(id, ['server', 'start'], { timeout: 20000 });
-    const status = hcJson(id, ['server', 'status']);
-    writeRun(id, { corePid: status?.pid, coreId: status?.core?.id, made: ['run folder', 'project copy', 'core'] });
-
-    progress('Opening the Herdr Lab window');
-    const vars = ['HC_SESSION', 'XDG_STATE_HOME', 'XDG_CONFIG_HOME', 'HERDR_APP_HOME', 'HERDR_APP_NO_SOUND', 'HERDR_TELEMETRY', 'HERDR_RELEASES_URL', 'PI_CODING_AGENT_DIR', 'PI_SKIP_VERSION_CHECK', 'LAB_RUN'];
-    const e = env(id), log = path.join(d.logs, 'app.log');
-    exec('/usr/bin/open', ['-n', ...(o.behind ? ['-g'] : []), '-a', a.bundle, ...vars.flatMap(k => ['--env', `${k}=${e[k]}`]), '--stdout', log, '--stderr', log], { id });
-    // A freshly signed copy is verified by macOS on its first launch, which can take a while.
-    await until(() => appJson(id, ['status'], { check: false, timeout: 5000 }), 120, 'the Herdr Lab window');
-    writeRun(id, { appPid: findAppPid(id), made: ['run folder', 'project copy', 'core', 'window'] });
-
+    await openLab(id, o, progress);
     progress('Opening pane P1 (a shell in the project copy)');
     await openPane(id, 'shell');
     writeRun(id, { phase: 'ready' });
     return id;
-  } catch (err) {
-    writeRun(id, { phase: 'failed', error: err.message });
-    if (!o.keepOnError) await stopLab(id).catch(() => {});
-    err.run = id;
-    throw err;
-  }
+  } catch (err) { throw await failed(id, o, err); }
+}
+
+// ---------- isolate: start a lab for one agent ----------
+
+/** Guest Main reads but never runs commands or edits: the lab tests the agent, not Main's coding (herdr-pi-lab). */
+export const MAIN_TOOLS = 'read,grep,find,ls';
+export const TESTER_TOOLS = ['lab_do', 'lab_look', 'lab_find', 'lab_verdict', 'lab_finish'];
+const TESTER = path.join(HERE, 'tester', 'index.ts');
+
+/** The /agent line Main gets. The job is the "## Job" text of agent.md, typed as one line. */
+export const agentCommand = ({ name, work, model, job }) => `/agent ${work ? '--work ' : ''}${name} --model ${model} ${job}`;
+
+/**
+ * Start a lab for agents/<name>/: copy the project (the agent's own files, never agent.md, expectations
+ * or reports), open guest Main (Pi, only /agent, read-only tools, --name Main), run the Before lines,
+ * open the agent with /agent, check that its whole job arrived, then open the Tester below it.
+ * Until tester/index.ts exists the lab stops before the Tester (phase "agent"). Returns the run id.
+ */
+export async function startAgentLab(o = {}, progress = () => {}) {
+  if (process.platform !== 'darwin') throw Error('The lab is built for macOS (it copies and signs Herdr.app)');
+  const project = path.resolve(o.project || process.cwd());
+  const loc = locate(project, o.name);
+  if (loc.missing) throw Error(`No expectations for ${o.name} yet. Write ${path.relative(project, loc.file)}, or run /lab new ${o.name} to write them together.`);
+  const name = o.name.charAt(0).toUpperCase() + o.name.slice(1);
+  const spec = parse(fs.readFileSync(loc.file, 'utf8'), name);
+  const agentJob = job(loc.dir);
+  if (!agentJob) throw Error(`${name} has no agent.md yet. Write ${path.relative(project, loc.agentFile)} with a "## Job" section first (or run /lab new ${name}).`);
+  const agentExt = carriedExtensions(project).find(t => t.name === 'agent');
+  if (!agentExt) throw Error('/agent was not found (project .pi/extensions, ~/.pi/agent/extensions or its git package), so the lab cannot open the agent.');
+  const model = o.model || defaultModel();
+  if (!model) throw Error('No model given and no default model in your Pi settings. Pass --model provider/id');
+  need('hc'); need('herdr-app'); need('pi');
+  const work = access(loc.dir) === 'work';
+  const agentModel = o.agentModel || 'fast';
+
+  const id = newLab(project, {
+    kind: 'agent', agent: name, folder: loc.folder, expectations: loc.file, model, agentModel, testerModel: o.testerModel || model,
+    tools: [agentExt], work, jobChars: agentJob.length,
+    items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })),
+  });
+  o.onId?.(id);
+  try {
+    await openLab(id, { behind: o.behind, agentFolder: loc.folder, withheld: [loc.file] }, progress);
+    const d = dirs(id), r = readRun(id);
+
+    progress('Starting guest Main');
+    const mainArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`,
+      need('pi'), '--no-extensions', '-e', agentExt.file, '--tools', MAIN_TOOLS,
+      '--no-skills', '--no-prompt-templates', '--no-themes', '--no-mcp', '--name', 'Main', '--model', model];
+    const space = appJson(id, ['do', 'space.new', JSON.stringify({ machine: '', name: `Lab · ${name}`, folder: r.copy, argv: mainArgv })], { timeout: 20000 });
+    if (!space?.terminal) throw Error(`Herdr Lab did not confirm guest Main: ${JSON.stringify(space)}`);
+    const main = space.terminal;
+    hc(id, ['label', main, 'lab.pane=Main'], { check: false });
+    writeRun(id, { phase: 'main', panes: { Main: main } });
+    await piReady(id, main, 90);
+
+    // Run lines prepare the copy (plant a bug, seed data); the lab runs them itself, not a model.
+    const setup = [];
+    for (const step of spec.before.filter(s => s.kind === 'run')) {
+      progress(`Before: ${step.text.slice(0, 60)}`);
+      const res = spawnSync('/bin/sh', ['-c', step.text], { cwd: r.copy, env: { ...env(id), TMPDIR: d.tmp }, encoding: 'utf8', timeout: 120000 });
+      setup.push({ command: step.text, status: res.status, output: ((res.stdout || '') + (res.stderr || '')).slice(-2000) });
+      writeRun(id, { setup });
+      if (res.status !== 0) throw Error(`Before (line ${step.line}): "${step.text}" exited ${res.status ?? res.signal}: ${(res.stderr || res.stdout || '').trim().slice(-400) || 'no output'}`);
+    }
+    for (const step of spec.before.filter(s => s.kind === 'do')) {
+      progress(`Before: ${step.text.slice(0, 60)}`);
+      await sendLine(id, main, step.text, [main], { quiet: 2 });
+    }
+
+    progress(`Opening ${name} with /agent (${agentModel}${work ? ', --work' : ''})`);
+    const known = new Set(panes(id).map(p => p.terminal));
+    hc(id, ['send', main, agentCommand({ name, work, model: agentModel, job: agentJob })], { timeout: 20000 });
+    const opened = await until(() => panes(id).find(p => !known.has(p.terminal)), 60, `the ${name} pane (look at guest Main for an /agent error)`);
+    hc(id, ['label', opened.terminal, `lab.pane=${name}`], { check: false });
+    writeRun(id, { panes: { Main: main, [name]: opened.terminal } });
+    await piReady(id, opened.terminal, 90);
+    await settleOn(id, [main, opened.terminal], { quiet: 3, seconds: 120 });
+
+    // hc send must deliver the whole job as one line; the agent's owner entry holds what /agent received.
+    const arrived = ownerJob(sessionFile(d.profile, name));
+    const jobArrived = squash1(arrived || '') === squash1(agentJob);
+    writeRun(id, { phase: 'agent', jobArrived });
+    if (!jobArrived) throw Error(`${name} opened, but its job did not arrive whole (${(arrived || '').length} of ${agentJob.length} characters). Look at guest Main.`);
+
+    if (!fs.existsSync(TESTER)) { progress('The Tester is not built yet; the lab stops here, open for you to look'); return id; }
+    progress('Opening the Tester');
+    const testerArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.judgeProfile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
+      '--no-extensions', '-e', TESTER, '--tools', TESTER_TOOLS.join(','),
+      '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-mcp', '--no-session', '--name', 'Tester',
+      '--model', o.testerModel || model, '--append-system-prompt', path.join(HERE, 'tester', 'prompt.md'), '--lab-run', id, 'Begin the black-box test.'];
+    const before = new Set(panes(id).map(p => p.terminal));
+    // In the Tester's own empty folder, so it never starts inside the project copy.
+    appJson(id, ['do', 'pane.split', JSON.stringify({ pane: opened.pane, direction: 'down', argv: ['/bin/sh', '-c', 'cd "$1" && shift && exec "$@"', 'lab', d.judgeCwd, ...testerArgv] })], { timeout: 20000 });
+    const tester = await until(() => panes(id).find(p => !before.has(p.terminal)), 30, 'the Tester pane');
+    hc(id, ['label', tester.terminal, 'lab.pane=Tester'], { check: false });
+    writeRun(id, { phase: 'testing', panes: { Main: main, [name]: opened.terminal, Tester: tester.terminal } });
+    return id;
+  } catch (err) { throw await failed(id, o, err); }
+}
+
+/** The job /agent recorded in an agent's owner entry: what actually arrived. */
+export function ownerJob(file) {
+  if (!file) return undefined;
+  return readSession(file).findLast(e => e.type === 'custom' && e.customType === MARK.owner)?.data?.job;
 }
 
 // ---------- drive ----------
@@ -351,6 +468,43 @@ export async function settle(id, { quiet = 2, seconds = 120 } = {}) {
     if (Date.now() > end) return false;
     await sleep(400);
   }
+}
+
+// ---------- quiet, from Herdr's terminal state (herdr-pi-lab) ----------
+
+/** One terminal's Herdr record: status is "working", "idle", "done" or null (a plain shell), turn counts turns. */
+export const term = (id, t) => hcJson(id, ['get', t], { check: false, timeout: 10000 }) || {};
+const stateOf = g => (g?.status && typeof g.status === 'object' ? g.status.state : g?.status);
+export const idle = g => ['idle', 'done'].includes(stateOf(g));
+
+/** Pi in this terminal is up and waiting for a prompt. */
+export const piReady = (id, t, seconds = 60) =>
+  until(() => { const g = term(id, t); return idle(g) && /\S/.test(screen(id, t)) && g; }, seconds, `Pi in ${t}`);
+
+/**
+ * Wait until every listed terminal is idle and its state and turn have not changed for `quiet` seconds
+ * (an agent watching Main starts its turn after Main ends). { settled, terminals }.
+ */
+export async function settleOn(id, terminals, { quiet = 4, seconds = 240 } = {}) {
+  const end = Date.now() + seconds * 1000;
+  let last = '', since = Date.now();
+  for (;;) {
+    const gs = terminals.map(t => term(id, t));
+    const sig = gs.map(g => `${stateOf(g)}:${g.turn}`).join('|');
+    if (sig !== last) { last = sig; since = Date.now(); }
+    const result = settled => ({ settled, terminals: Object.fromEntries(terminals.map((t, i) => [t, gs[i]])) });
+    if (gs.every(idle) && Date.now() - since >= quiet * 1000) return result(true);
+    if (Date.now() > end) return result(false);
+    await sleep(400);
+  }
+}
+
+/** Type one line into a terminal exactly as written, then wait until the listed terminals are quiet. */
+export async function sendLine(id, terminal, text, all, opt = {}) {
+  hc(id, ['send', terminal, text], { timeout: 20000 });
+  // A prompt starts a turn; a slash command may not. Give either a moment to begin.
+  await sleep(1500);
+  return settleOn(id, all, opt);
 }
 
 /** Read the visible text of one pane, or every pane. What it returns is recorded as evidence. */
@@ -633,10 +787,31 @@ export async function stopLab(id) {
     for (let i = 0; i < 50 && coreUp(id); i++) await sleep(100);
     done.push(`core ${id}${r.corePid ? ` (pid ${r.corePid})` : ''} stopped`);
   }
+  // Herdr can respawn a space's first terminal while the window quits; once the core is gone it is an
+  // orphaned shell still running the lab's own command line. End only processes naming this lab's folders.
+  const strays = await endStrays(id);
+  if (strays) done.push(`${strays} stray lab process(es) ended`);
   fs.rmSync(d.sock, { recursive: true, force: true });
   fs.rmSync(d.root, { recursive: true, force: true });
   done.push(`deleted ${d.root} (project copy, Pi profiles, logs, screenshots) and ${d.sock}`);
   return { id, done, left: leftovers(id, { window: pid, core: r.corePid, 'lab agent': r.judgePid }) };
+}
+
+const labMarkers = id => [`${path.join(LAB_HOME, id)}/`, `${path.join(SOCK_ROOT, id)}/`];
+/** Pids whose command line names this lab's run or socket folder, never this process or its parent. */
+function labProcesses(id) {
+  const ps = spawnSync('/bin/ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' }).stdout || '';
+  const self = new Set([process.pid, process.ppid]);
+  return ps.split('\n').map(l => l.trim().match(/^(\d+)\s+(.*)$/)).filter(m => m && !self.has(Number(m[1])) && !m[2].startsWith('/bin/ps')
+    && labMarkers(id).some(k => m[2].includes(k))).map(m => Number(m[1]));
+}
+async function endStrays(id) {
+  let pids = labProcesses(id);
+  if (!pids.length) return 0;
+  for (const p of pids) try { process.kill(p, 'SIGTERM'); } catch {}
+  for (let i = 0; i < 20 && pids.some(alive); i++) await sleep(100);
+  for (const p of pids.filter(alive)) try { process.kill(p, 'SIGKILL'); } catch {}
+  return pids.length;
 }
 
 /** What is still around after a stop. For one lab: anything of it. Always: the shared app copy and reports. */
@@ -644,7 +819,7 @@ export function leftovers(id, pids = {}) {
   const ps = spawnSync('/bin/ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' }).stdout || '';
   // Match the lab's own paths (its app bundle, run folder, socket folder), not any text naming the id,
   // and never this process or its parent (the shell that ran `lab stop`).
-  const markers = id ? [`${path.join(LAB_HOME, id)}/`, `${path.join(SOCK_ROOT, id)}/`] : ['Herdr Lab.app/', `${SOCK_ROOT}/`];
+  const markers = id ? labMarkers(id) : ['Herdr Lab.app/', `${SOCK_ROOT}/`];
   const self = new Set([process.pid, process.ppid]);
   const procs = ps.split('\n').map(l => l.trim()).filter(l => {
     const m = l.match(/^(\d+)\s+(.*)$/);

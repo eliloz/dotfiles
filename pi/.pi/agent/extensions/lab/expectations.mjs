@@ -112,3 +112,14 @@ export function access(dir) {
   const file = path.join(dir, 'agent.md');
   return fs.existsSync(file) && /^Access:[ \t]*work\b/im.test(fs.readFileSync(file, 'utf8')) ? 'work' : 'read';
 }
+
+/**
+ * What `lab test …` means: a scenarios file (the default lab-scenarios.md, or a file named first),
+ * one agent by name (a single word that is not a file: agents/<name>/), or a scenario in plain words.
+ */
+export function testTarget(args, isFile) {
+  const [first, ...rest] = args;
+  if (!first || isFile(first)) return { kind: 'scenarios', file: first, pick: rest.join(' ') || undefined };
+  if (args.length === 1 && NAME.test(first)) return { kind: 'agent', name: first };
+  return { kind: 'words', text: args.join('\n') };
+}

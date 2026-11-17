@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as core from './core.mjs';
 import { help } from './help.mjs';
+import { testTarget } from './expectations.mjs';
 
 function parse(argv) {
   const o = { _: [] };
@@ -11,6 +12,8 @@ function parse(argv) {
     const a = argv[i];
     if (a === '--with' || a.startsWith('--with=')) throw Error('--with is gone: /split and /agent carry over into the lab by themselves; add others with LAB_EXTENSIONS=path:path');
     else if (a === '--model') o.model = argv[++i];
+    else if (a === '--agent-model') o.agentModel = argv[++i];
+    else if (a === '--tester-model') o.testerModel = argv[++i];
     else if (a === '--run') o.run = argv[++i];
     else if (a === '--seconds') o.seconds = Number(argv[++i]);
     else if (a === '--keep') o.keep = true;
@@ -83,13 +86,14 @@ const isFile = f => { try { return fs.statSync(f).isFile(); } catch { return fal
  * Each scenario runs in its own lab, which is stopped afterwards (unless --keep).
  */
 async function testCmd(o) {
-  const [first, ...rest] = o._;
+  const t = testTarget(o._, isFile);
+  if (t.kind === 'agent') return agentCmd(o, t.name);
   let file, scenarios;
-  if (!first || isFile(first)) {
-    file = first || DEFAULT_FILE;
-    if (!isFile(file)) throw Error(`No ${DEFAULT_FILE} here. Give a file (lab test FILE 1) or the steps in words (lab test "Open a pane. Run ls.")`);
-    scenarios = core.pickScenario(core.parseScenarios(fs.readFileSync(file, 'utf8')), rest.join(' ') || undefined);
-  } else scenarios = core.pickScenario(core.parseScenarios(o._.join('\n')));
+  if (t.kind === 'scenarios') {
+    file = t.file || DEFAULT_FILE;
+    if (!isFile(file)) throw Error(`No ${DEFAULT_FILE} here. Give a file (lab test FILE 1), an agent (lab test critic) or the steps in words (lab test "Open a pane. Run ls.")`);
+    scenarios = core.pickScenario(core.parseScenarios(fs.readFileSync(file, 'utf8')), t.pick);
+  } else scenarios = core.pickScenario(core.parseScenarios(t.text));
   if (scenarios.length > 1) progress(`${scenarios.length} scenarios from ${file}, one lab each`);
   let worst = 0;
   for (const scenario of scenarios) {
@@ -97,6 +101,19 @@ async function testCmd(o) {
     worst = Math.max(worst, code);
   }
   return worst;
+}
+
+/** lab test <Agent>: open the agent's lab (Main, Before, /agent, then the Tester). It stays open for you to look. */
+async function agentCmd(o, name) {
+  const onId = stopOnSignal({}); // Ctrl-C while it opens stops the lab
+  const id = await core.startAgentLab({ name, model: o.model, agentModel: o.agentModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
+  const r = core.readRun(id);
+  console.log([`Lab ${id} for ${r.agent}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
+    `Panes: ${core.panes(id).map(p => `${p.name} (${p.terminal})`).join(', ')}`,
+    `Models: Main ${r.model} · ${r.agent} ${r.agentModel} · Tester ${r.testerModel}`,
+    `${r.agent}'s job arrived whole: ${r.jobArrived ? 'yes' : 'no'} (${r.jobChars} characters)`,
+    `Close it with: lab stop ${id}`].join('\n'));
+  return 0;
 }
 
 async function runScenario(o, scenario, withheld) {
