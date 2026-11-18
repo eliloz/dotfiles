@@ -680,6 +680,13 @@ export function transcript(id, pane) {
 export const transcriptText = items => items.map(i => `[${i.who}] ${i.text}`).join('\n\n');
 
 /**
+ * A pane's own replies after transcript item `from`: what it wrote during one step, whole. Pi is fullscreen,
+ * so a long reply's start leaves the screen and the terminal keeps no history of it; its session does.
+ * Only the pane's replies: typed prompts (which hold an invoked skill's text) and lab events are left out.
+ */
+export const repliesSince = (items, from, pane) => items.slice(from).filter(i => i.who === pane).map(i => i.text).join('\n\n');
+
+/**
  * XDG_CONFIG_HOME points at the lab's folder only so the lab core reads its own config.toml (the core
  * has no other setting for it). Programs in lab panes get yours back, so tools that keep their config
  * there (mise, git, gh…) work as in your daily shell. The socket comes from HC_SESSION + XDG_STATE_HOME,

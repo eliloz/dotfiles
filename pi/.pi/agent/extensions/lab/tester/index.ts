@@ -5,9 +5,11 @@
  * steps, read the guest panes' screens and record verdicts. Adapted from herdr-pi-lab's tester (0.5.0).
  *
  * Ours differs on one point (lesson, build guide line 403: "judge … from quoted screen text … reject any
- * quote that is not actually on screen"): the Tester sees screens only, never the panes' session
- * transcripts. Per expectation the lab keeps `given` (exactly the screen text the Tester was shown; its
- * quotes must come from there) and `saw` (every full screen the lab read; See/Absent are checked there).
+ * quote that is not actually on screen"): the Tester sees screens, plus each pane's own replies to the current
+ * step taken from its session, because a fullscreen Pi keeps no history of a reply that scrolled off. It never
+ * sees typed prompts from a session (they hold an invoked skill's text) or the system prompt. Per expectation the
+ * lab keeps `given` (exactly the text the Tester was shown; its quotes must come from there) and `saw` (every
+ * full screen the lab read, and those replies; See/Absent are checked there).
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -21,6 +23,7 @@ import { parse, steps, decide, contains, belowInstructions } from "../expectatio
 import { writeReport, headline } from "../report.mjs";
 
 const SCREEN_LINES = 40;
+const REPLY_CHARS = 30000;
 const text = (t: string, summary?: string) => ({ content: [{ type: "text" as const, text: t }], details: { summary } });
 // The person watching reads this pane: one line per tool result, the full text on ctrl+o.
 const renderResult = (result: any, options: any, theme: any) => {
@@ -77,7 +80,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_do",
 		label: "Lab · do",
-		description: "Run the Do lines of one expectation exactly as written (typed into the named guest pane), wait until the guest panes are quiet, and return the lines to check and the end of every guest screen.",
+		description: "Run the Do lines of one expectation exactly as written (typed into the named guest pane), wait until the guest panes are quiet, and return the lines to check, each guest pane's whole reply to this step (from its session), and the end of every guest screen.",
 		parameters: Type.Object({ expectation: Type.Integer({ minimum: 1 }) }),
 		renderResult,
 		async execute(_c, p) {
@@ -89,6 +92,8 @@ export default function (pi: ExtensionAPI) {
 			const rec = results.items.find((x: any) => x.id === it.id);
 			rec.given ??= {}; rec.saw ??= {};
 			save(id, results);
+			// Where each guest's transcript ends now, so its reply to this step can be read whole afterwards.
+			const from = Object.fromEntries(guests(run).map(([k]) => [k, core.transcript(id, k).length]));
 			const log: string[] = [];
 			for (const s of todo) {
 				const r = await core.sendLine(id, s.pane.terminal, s.text, terminals, { quiet: 4, seconds: 240 });
@@ -99,7 +104,10 @@ export default function (pi: ExtensionAPI) {
 			const screens = guests(run).map(([k, t]) => {
 				const full = core.screen(id, t), shown = core.lastLines(full, SCREEN_LINES);
 				add(rec.saw, k, full); add(rec.given, k, shown);
-				return `--- ${k}: end of screen ---\n${shown || "(blank)"}`;
+				// Pi is fullscreen: a long reply's start scrolls off and no history keeps it. Its session does.
+				const reply = core.repliesSince(core.transcript(id, k), from[k], k).slice(0, REPLY_CHARS);
+				if (reply) { add(rec.saw, k, reply); add(rec.given, k, reply); }
+				return (reply ? `--- ${k}: its whole reply to this step ---\n${reply}\n\n` : "") + `--- ${k}: end of screen ---\n${shown || "(blank)"}`;
 			});
 			save(id, results);
 			const checks = it.lines.filter((l: any) => l.kind !== "do").map((l: any) => `${l.kind[0].toUpperCase() + l.kind.slice(1)} (${l.pane}): ${l.text}`);

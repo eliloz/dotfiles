@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { MARK, sessionFile, transcriptOf, transcriptText, readSession } from '../core.mjs';
+import { MARK, sessionFile, transcriptOf, transcriptText, readSession, repliesSince } from '../core.mjs';
+import { parse, decide } from '../expectations.mjs';
 
 const INSTRUCTIONS = 'Repeat the last prompt in Main in at most five words, as one numbered finding.';
 const at = n => `2026-11-17T20:54:${String(n).padStart(2, '0')}.000Z`;
@@ -82,4 +83,30 @@ test('sessionFile finds a pane by its session name, newest first, any case', () 
   assert.equal(sessionFile(path.join(profile, 'missing'), 'Main'), undefined);
   assert.equal(readSession(path.join(dir, 'a.jsonl')).length, main.length + 1, 'a broken line is read as {}');
   fs.rmSync(profile, { recursive: true, force: true });
+});
+
+// Pi is fullscreen: a long reply's start leaves the screen and no terminal history keeps it, so a See line on the
+// first line of a long reply could never pass. lab_do adds each pane's reply to the current step from its session.
+test('repliesSince gives only the pane\'s own replies after a point: no typed text, no earlier replies', () => {
+  const items = [
+    { who: 'typed', text: '/skill:grilling … SKILL TEXT …' },
+    { who: 'Main', text: 'Q1 first round' },
+    { who: 'typed', text: 'Yes to all.' },
+    { who: 'lab', text: '(an event)' },
+    { who: 'Main', text: 'Q4 second round,' },
+    { who: 'Main', text: 'continued' },
+  ];
+  assert.equal(repliesSince(items, 0, 'Main'), 'Q1 first round\n\nQ4 second round,\n\ncontinued');
+  assert.equal(repliesSince(items, 2, 'Main'), 'Q4 second round,\n\ncontinued');
+  assert.equal(repliesSince(items, 6, 'Main'), '');
+  assert.ok(!repliesSince(items, 0, 'Main').includes('SKILL TEXT'));
+});
+
+test('a See line and a quote match a reply whose start scrolled off, once the reply is in given and saw', () => {
+  const [it] = parse('# x\n\n## Opens with a round\nDo (Main): /skill:grilling idea\nExpect (Main): asks numbered questions\nSee (Main): "Q1"\n', 'Main').items;
+  const screen = 'Q5 - Reason\n➡️ Yes.';
+  const reply = '❓ **Q1** - **Who may withdraw**: Only the buyer?\n\n➡️ Yes.\n\n' + screen;
+  const p = { verdict: 'pass', reason: 'ok', evidence: [{ pane: 'Main', quote: 'Q1 - Who may withdraw' }] };
+  assert.equal(decide(it, { ...p, evidence: [{ pane: 'Main', quote: 'Q5 - Reason' }] }, { Main: [screen] }, { Main: [screen] }).verdict, 'fail');
+  assert.equal(decide(it, p, { Main: [screen, reply] }, { Main: [screen, reply] }).verdict, 'pass');
 });

@@ -15,7 +15,7 @@ For each expectation, in order, starting at 1:
    - **fail** when something is missing, wrong, ambiguous or merely plausible. Say what you saw instead.
    - Judge against what the Expect line **names**, not against what would be sensible. If it asks for a finding about one thing and the screen shows a good finding about something else, that is a fail: say which thing the finding was about. Examples on an Expect line ("such as …") show the kind of thing meant; a finding of another kind does not count.
    - Quote the screen **verbatim** as evidence: short exact phrases, one per entry, with the pane. Quote only from screens `lab_do` or `lab_look` showed you for this expectation; the lab rejects any other quote.
-   - If the start of a reply has scrolled off the screen, call `lab_look` with `lines` above 40 (up to 200): it then also reads the pane's history above the screen. That history holds replies to earlier expectations too, so quote only what this expectation's step produced. Fail for "scrolled off" only when it is still not there.
+   - `lab_do` also returns each guest pane's whole reply to this step, read from its session, above the end of the screen. A long reply's start scrolls off the screen, so judge from that whole reply and quote from it freely; it holds only what this step produced. Never fail for "scrolled off" when the whole reply is shown.
    - Use `absent` for things you checked are not there.
    - See and Absent lines are checked by the lab itself; your verdict cannot override them.
 
