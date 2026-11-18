@@ -50,3 +50,21 @@ export function writeReport(id, { summary }) {
   fs.writeFileSync(file, reportText({ run, results, summary, screens, shot, when, id }));
   return { file, shot };
 }
+
+/**
+ * `lab test <Agent> --runs N`: how often each expectation passed. runs = [{ code, res }] in order;
+ * code 0 passed, 1 failed, 2 no report. A run without a report counts against every expectation.
+ */
+export function runsSummary(agent, runs, wanted = runs.length) {
+  const Name = agent.charAt(0).toUpperCase() + agent.slice(1);
+  const clean = runs.filter(r => r.code === 0).length;
+  const titles = runs.find(r => r.res?.items)?.res.items.map(i => ({ id: i.id, title: i.title })) || [];
+  const width = Math.max(0, ...titles.map(t => `${t.id} · ${t.title}`.length));
+  const lines = [`${Name}: ${clean} of ${runs.length} runs passed${runs.length < wanted ? ` (stopped early; ${wanted} were asked for)` : ''}`];
+  for (const t of titles) {
+    const failed = runs.map((r, n) => r.res?.items?.find(i => i.id === t.id)?.verdict === 'pass' ? 0 : n + 1).filter(Boolean);
+    lines.push(`${failed.length ? '✗' : '✓'} ${`${t.id} · ${t.title}`.padEnd(width)}  ${runs.length - failed.length}/${runs.length}${failed.length ? `  failed in run ${failed.join(', ')}` : ''}`);
+  }
+  runs.forEach((r, n) => lines.push(`Run ${n + 1}: ${r.res?.report || 'no report'}`));
+  return lines.join('\n');
+}

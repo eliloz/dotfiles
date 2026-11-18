@@ -47,6 +47,8 @@ Options for test
   --tester-model p/id  The Tester (the judge). Default: --model
   --behind             Open the lab window behind your windows${shell ? `
   --wait / --keep      Agent test: wait for the report; keep the lab open afterwards
+  --runs N             Agent test: run it N times, one lab after another, and print how often each
+                       expectation passed. One pass says little about an agent on a small model
   --seconds N          Give up after N seconds (default 900)` : ''}
 
 Expectations: agents/<name>/expectations.md. Do lines are typed exactly; Expect/Never are judged by the
@@ -56,7 +58,7 @@ ${FORMAT.split('\n').map(l => '  ' + l).join('\n')}
 
 Examples
   ${p} doctor
-  ${shell ? `${p} test Critic --wait` : `${p} new Critic Check every prompt for missing facts, blast radius and size`}
+  ${shell ? `${p} test Critic --wait\n  ${p} test Critic --runs 5 --behind` : `${p} new Critic Check every prompt for missing facts, blast radius and size`}
   ${p} test Critic --behind
   ${p} report Critic
   ${p} test lab-scenarios.md /split

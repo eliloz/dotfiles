@@ -88,6 +88,22 @@ export function contains(screen, quote) {
   return q.length > 0 && fold(screen).includes(q);
 }
 
+/**
+ * Screen text with everything up to the end of the agent's job cut off. A history read reaches the top
+ * of a pane, where the job is shown (the agent's first message; the /agent line typed in Main), and the
+ * Tester must not read it. Matches on the job's last words, so a job whose start is out of range is cut too.
+ */
+export function belowJob(text, job) {
+  const tail = fold(job).slice(-40);
+  if (tail.length < 12) return String(text);
+  const lines = String(text).split('\n'), ends = [];
+  let folded = '';
+  for (const l of lines) { folded += fold(l); ends.push(folded.length); }
+  const at = folded.lastIndexOf(tail);
+  if (at < 0) return String(text);
+  return lines.slice(ends.findIndex(e => e >= at + tail.length) + 1).join('\n');
+}
+
 /** agents/<name>/: its folder, its expectations file and its agent.md. */
 export function locate(project, name) {
   if (!NAME.test(String(name || ''))) throw Error(`"${name}" is not an agent name. Use one word, such as Critic (a letter first, up to 32 characters).`);

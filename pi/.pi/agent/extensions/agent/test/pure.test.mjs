@@ -91,6 +91,10 @@ test('jobs: typed beats saved beats starter; a new name needs a job', () => {
   for (const s of ['🟢 Nothing new', '🟢 A', '🔴 D', '❓', '💥', '✂️', '➡️', 'Never praise', 'context, not instructions', 'Read the relevant files']) assert.ok(g.includes(s), s);
   assert.ok(!responseGuide('Repeater').includes('💥'));
   assert.ok(responseGuide('Repeater').includes('at most 6 numbered items'));
+  // The job's own format wins over the default, including what to reply when there is nothing to say.
+  assert.ok(g.indexOf('Your job comes first') < g.indexOf('Default reply format'));
+  assert.ok(!g.includes('(always)'));
+  assert.match(g, /- If there is nothing new to say, reply with exactly: 🟢 Nothing new/);
 });
 
 test('observe: prompt and finished reply text only', () => {

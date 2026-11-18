@@ -35,7 +35,7 @@ const MSG = "lab-result";
 const NEW = "lab-new";
 const WIDGET = "lab";
 const MARK: Record<string, string> = { pass: "✓", fail: "✗", running: "◐", pending: "○" };
-const VALUE_FLAGS = new Set(["--model", "--agent-model", "--tester-model", "--seconds", "--run"]);
+const VALUE_FLAGS = new Set(["--model", "--agent-model", "--tester-model", "--seconds", "--run", "--runs"]);
 
 /** Shell-like split: "quoted words" stay one argument. */
 export function tokenize(s: string): string[] {
@@ -206,6 +206,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				if (cmd === "test" || cmd === "run" || cmd === "start") {
+					if (argv.includes("--runs")) return ctx.ui.notify("--runs waits for every run, so it belongs in a shell: lab test <Agent> --runs 3", "warning");
 					if (starting) return ctx.ui.notify("A lab from this conversation is still opening; wait, or /lab stop", "warning");
 					const target = cmd === "start" ? undefined : testTarget(positionals(argv.slice(1)), isFileIn(ctx.cwd));
 					starting = true;

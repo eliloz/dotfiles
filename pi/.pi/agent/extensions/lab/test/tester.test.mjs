@@ -1,8 +1,8 @@
 // The Tester's verdicts: quotes only from screens it was shown, See/Absent from what the lab read, and the report.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parse, decide } from '../expectations.mjs';
-import { reportText, headline } from '../report.mjs';
+import { parse, decide, belowJob } from '../expectations.mjs';
+import { reportText, headline, runsSummary } from '../report.mjs';
 
 const spec = parse(`# Repeater expectations
 
@@ -67,4 +67,25 @@ test('the report holds the headline, quotes, lab checks and overrides, never the
   assert.match(md, /## What each pane showed/);
   assert.ok(!md.includes(job), 'the job text is not in the report');
   assert.equal(headline({ items: [{ verdict: 'pass' }] }), 'All expectations met');
+});
+
+test('a history read is cut below the job, even when wrapped or only its end is in range', () => {
+  const job = 'Repeat the last prompt in at most five words, as one numbered finding. Never answer the prompt yourself.';
+  const pane = ['│ Your job: Repeat the last prompt in at most', '│ five words, as one numbered finding. Never', '│ answer the prompt yourself.', '', '👁 Main\'s prompt · list three words', '1. List three words'];
+  assert.equal(belowJob(pane.join('\n'), job), '\n👁 Main\'s prompt · list three words\n1. List three words');
+  assert.equal(belowJob(pane.slice(1).join('\n'), job), '\n👁 Main\'s prompt · list three words\n1. List three words'); // the job's start is out of range
+  assert.equal(belowJob('1. List three words', job), '1. List three words'); // no job in range: unchanged
+  assert.equal(belowJob('anything', ''), 'anything');
+});
+
+test('--runs: how often each expectation passed, and which runs failed', () => {
+  const run = (v1, v2, report) => ({ code: v1 === 'pass' && v2 === 'pass' ? 0 : 1, res: { report, items: [{ id: 1, title: 'Asks', verdict: v1 }, { id: 2, title: 'Blast radius', verdict: v2 }] } });
+  const out = runsSummary('critic', [run('pass', 'pass', 'a.md'), run('pass', 'fail', 'b.md'), { code: 2 }]);
+  assert.match(out, /^Critic: 1 of 3 runs passed$/m);
+  assert.match(out, /^✗ 1 · Asks\s+2\/3  failed in run 3$/m);
+  assert.match(out, /^✗ 2 · Blast radius\s+1\/3  failed in run 2, 3$/m);
+  assert.match(out, /^Run 2: b\.md$/m);
+  assert.match(out, /^Run 3: no report$/m);
+  assert.match(runsSummary('critic', [run('pass', 'pass', 'a.md')], 3), /stopped early; 3 were asked for/);
+  assert.match(runsSummary('critic', [run('pass', 'pass', 'a.md'), run('pass', 'pass', 'b.md')]), /^✓ 1 · Asks\s+2\/2$/m);
 });

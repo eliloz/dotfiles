@@ -16,7 +16,7 @@ import fs from "node:fs";
 // @ts-ignore: plain ESM shared with the `lab` shell command
 import * as core from "../core.mjs";
 // @ts-ignore
-import { parse, steps, decide, contains } from "../expectations.mjs";
+import { parse, steps, decide, contains, belowJob } from "../expectations.mjs";
 // @ts-ignore
 import { writeReport, headline } from "../report.mjs";
 
@@ -108,16 +108,20 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_look",
 		label: "Lab · look",
-		description: "Read the end of a guest pane's screen now (Main or the agent).",
+		description: "Read the end of a guest pane's screen now (Main or the agent). With lines above 40 (up to 200) it also reads the pane's history above the screen, for a reply whose start has scrolled off.",
 		parameters: Type.Object({ pane: Type.String(), lines: Type.Optional(Type.Integer({ minimum: 5, maximum: 200 })) }),
 		renderResult,
 		async execute(_c, p) {
 			const { id, run, results } = load();
 			const pane = paneOf(run, p.pane);
-			const full = core.screen(id, pane.terminal), shown = core.lastLines(full, p.lines || SCREEN_LINES);
+			const want = p.lines || SCREEN_LINES, full = core.screen(id, pane.terminal);
+			// History reaches the top of the pane, where the job is shown: cut it off. `saw` stays the visible
+			// screen, so See/Absent never match a reply to an earlier expectation.
+			const job = want > SCREEN_LINES ? core.ownerJob(core.sessionFile(core.dirs(id).profile, run.agent)) || "" : "";
+			const shown = core.lastLines(want > SCREEN_LINES ? belowJob(core.screen(id, pane.terminal, want), job) : full, want);
 			const rec = current(results);
 			if (rec) { add(rec.saw ??= {}, pane.name, full); add(rec.given ??= {}, pane.name, shown); save(id, results); }
-			return text(`--- ${pane.name}: end of screen ---\n${shown || "(blank)"}`, `read ${pane.name}`);
+			return text(`--- ${pane.name}: end of ${want > SCREEN_LINES ? "history and screen" : "screen"} ---\n${shown || "(blank)"}`, `read ${pane.name}`);
 		},
 	});
 

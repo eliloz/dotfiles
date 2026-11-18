@@ -5,7 +5,7 @@ import path from 'node:path';
 import * as core from './core.mjs';
 import { help } from './help.mjs';
 import { testTarget } from './expectations.mjs';
-import { headline } from './report.mjs';
+import { headline, runsSummary } from './report.mjs';
 import { projectAgents, latestReport } from './agents.mjs';
 
 function parse(argv) {
@@ -18,6 +18,7 @@ function parse(argv) {
     else if (a === '--tester-model') o.testerModel = argv[++i];
     else if (a === '--run') o.run = argv[++i];
     else if (a === '--seconds') o.seconds = Number(argv[++i]);
+    else if (a === '--runs') { o.runs = Number(argv[++i]); if (!Number.isInteger(o.runs) || o.runs < 1 || o.runs > 20) throw Error('--runs takes a number from 1 to 20'); }
     else if (a === '--keep') o.keep = true;
     else if (a === '--wait') o.wait = true;
     else if (a === '--behind') o.behind = true;
@@ -90,7 +91,8 @@ const isFile = f => { try { return fs.statSync(f).isFile(); } catch { return fal
  */
 async function testCmd(o) {
   const t = testTarget(o._, isFile);
-  if (t.kind === 'agent') return agentCmd(o, t.name);
+  if (o.runs && t.kind !== 'agent') throw Error('--runs is for an agent: lab test <Agent> --runs N');
+  if (t.kind === 'agent') return o.runs > 1 ? agentRuns(o, t.name) : (await agentCmd(o, t.name)).code;
   let file, scenarios;
   if (t.kind === 'scenarios') {
     file = t.file || DEFAULT_FILE;
@@ -109,6 +111,7 @@ async function testCmd(o) {
 /**
  * lab test <Agent>: open the agent's lab (Main, Before, /agent, then the Tester). It stays open for you to look.
  * With --wait: block until the Tester has written its report, print the verdicts, then stop the lab (--keep: leave it open).
+ * Returns { code, res }: the exit code and the run's results.
  */
 async function agentCmd(o, name) {
   const onSignal = stopOnSignal(o.wait ? o : {}); // Ctrl-C while it opens (or waits) stops the lab
@@ -121,17 +124,34 @@ async function agentCmd(o, name) {
     `Models: Main ${r.model} · ${r.agent} ${r.agentModel} · Tester ${r.testerModel}`,
     `${r.agent}'s job arrived whole: ${r.jobArrived ? 'yes' : 'no'} (${r.jobChars} characters)`,
     ...(o.wait ? [] : [`Close it with: lab stop ${id}`])].join('\n'));
-  if (!o.wait || r.phase !== 'testing') return 0;
+  if (!o.wait || r.phase !== 'testing') return { code: 0 };
   const res = await waitForTester(id, o.seconds || 900);
   if (interrupted) await interrupted;
-  if (!core.readRun(id)) { console.log(`${id} was stopped during the run, so there is no report.`); return 2; }
+  if (!core.readRun(id)) { console.log(`${id} was stopped during the run, so there is no report.`); return { code: 2 }; }
   const lines = res?.report
     ? [`${r.agent}: ${headline(res)}`, ...res.items.map(i => `${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}${i.reason ? `\n     ${i.reason}` : ''}`), `Report: ${res.report}`]
     : [`${r.agent}: unfinished · the Tester did not call lab_finish within ${o.seconds || 900} s`];
   if (o.keep) lines.push(`The lab is still open (--keep). Close it with: lab stop ${id}`);
   else lines.push(await stopText(id));
   console.log(lines.join('\n') + '\n');
-  return !res?.report ? 2 : res.result === 'pass' ? 0 : 1;
+  return { code: !res?.report ? 2 : res.result === 'pass' ? 0 : 1, res };
+}
+
+/**
+ * lab test <Agent> --runs N: the same test N times, one lab after another, each stopped when it ends.
+ * One pass says little about an agent on a small model; this prints how often each expectation passed.
+ * Exit 0 only when every run passed; 2 when a run could not finish.
+ */
+async function agentRuns(o, name) {
+  if (o.keep) throw Error('--runs stops each lab before the next one opens, so it cannot be used with --keep');
+  const runs = [];
+  for (let n = 1; n <= o.runs; n++) {
+    progress(`Run ${n} of ${o.runs}`);
+    runs.push(await agentCmd({ ...o, wait: true }, name));
+    if (runs.at(-1).code === 2 && !runs.at(-1).res?.items) break; // the lab itself could not run: more runs would not help
+  }
+  console.log(runsSummary(name, runs, o.runs));
+  return Math.max(...runs.map(r => r.code));
 }
 
 async function waitForTester(id, seconds) {
