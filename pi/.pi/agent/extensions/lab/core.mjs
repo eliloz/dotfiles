@@ -154,7 +154,8 @@ function piProfile(dir) {
   }
   const s = readJson(path.join(DAILY_PI, 'settings.json'), {});
   // herdr-pi-lab's list. No default model: every lab pane is started with --model.
-  const keep = ['lastChangelogVersion', 'warnings', 'enabledModels', 'modelThinkingLevels', 'theme', 'quietStartup', 'defaultThinkingLevel'];
+  // Ours adds hideThinkingBlock: the lab's panes show thinking only if yours do, so the Tester sees what you would.
+  const keep = ['lastChangelogVersion', 'warnings', 'enabledModels', 'modelThinkingLevels', 'theme', 'quietStartup', 'defaultThinkingLevel', 'hideThinkingBlock'];
   writeJson(path.join(dir, 'settings.json'), { ...Object.fromEntries(keep.filter(k => k in s).map(k => [k, s[k]])), quietStartup: true, enableInstallTelemetry: false });
 }
 

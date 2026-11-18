@@ -211,7 +211,7 @@ export default function (pi: ExtensionAPI) {
 					starting = true;
 					if (target?.kind === "agent") {
 						// Returns once the Tester is running; the widget follows the run and the result arrives as a message.
-						ctx.ui.notify(`Opening a lab for ${target.name}. The widget follows it; the result arrives here.`, "info");
+						ctx.ui.notify(`Opening a lab for ${target.name.charAt(0).toUpperCase() + target.name.slice(1)}. The widget follows it; the result arrives here.`, "info");
 						startAgent(agentArgs(target.name, argv.slice(2), ctx), ctx, true)
 							.then(({ id, code, text }) => {
 								if (code !== 0) { setWidget(undefined); ctx.ui.notify(text || `lab exited ${code}`, "error"); }
