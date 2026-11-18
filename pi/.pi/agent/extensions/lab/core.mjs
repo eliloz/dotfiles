@@ -169,16 +169,15 @@ export function defaultModel() {
 
 /**
  * Extensions that carry over into the lab's Pi panes, as in herdr-pi-lab: /split and /agent wherever this
- * computer has them (the project's .pi, your Pi extensions or git packages), plus LAB_EXTENSIONS (paths
+ * computer has them (the project's .pi or your Pi extensions), plus LAB_EXTENSIONS (paths
  * separated by ":"). Nothing else from your Pi setup is loaded there, and never /lab itself.
  */
-export const CARRIED = [['split', ['split', 'herdr-pi-split']], ['agent', ['agent', 'role', 'herdr-pi-role']]];
+export const CARRIED = ['split', 'agent'];
 export function carriedExtensions(project = process.cwd()) {
   const found = [];
   const file = c => [c, `${c}.ts`, `${c}.js`, path.join(c, 'index.ts'), path.join(c, 'index.js')].find(f => { try { return fs.statSync(f).isFile(); } catch { return false; } });
-  for (const [name, dirNames] of CARRIED) {
-    const candidates = dirNames.flatMap(n => [path.join(project, '.pi', 'extensions', n), path.join(project, '.pi', 'git', 'github.com', 'johnlindquist', n),
-      path.join(DAILY_PI, 'extensions', n), path.join(DAILY_PI, 'git', 'github.com', 'johnlindquist', n)]);
+  for (const name of CARRIED) {
+    const candidates = [path.join(project, '.pi', 'extensions', name), path.join(DAILY_PI, 'extensions', name)];
     for (const c of candidates) { const f = file(c); if (f) { found.push({ name, file: fs.realpathSync(f) }); break; } }
   }
   for (const extra of (process.env.LAB_EXTENSIONS || '').split(path.delimiter).filter(Boolean)) {
@@ -882,7 +881,7 @@ export function doctor(project = process.cwd()) {
   // Like herdr-pi-lab: say whether /split and /agent were found. A missing one is a note, not a failure.
   let carried = [];
   add('harness', 'extensions that carry over', () => { carried = carriedExtensions(project); return carried.length ? carried.map(t => `/${t.name}`).join(', ') : 'none'; });
-  for (const [name] of CARRIED) add('harness', `/${name}`, () => { const t = carried.find(x => x.name === name); if (!t) throw Error('not found; scenarios that use it will fail'); return t.file; }, true);
+  for (const name of CARRIED) add('harness', `/${name}`, () => { const t = carried.find(x => x.name === name); if (!t) throw Error('not found; scenarios that use it will fail'); return t.file; }, true);
   add('project', 'git project', () => {
     const ls = spawnSync('git', ['-C', project, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 << 20 });
     if (ls.status !== 0) throw Error(`${project} is not a git repository; run the lab from a git project`);
