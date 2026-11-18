@@ -1,19 +1,19 @@
 /**
- * The agent's session: a branch of Main's conversation in a new file. Like /split's createBranch,
+ * The sidecar's session: a branch of Main's conversation in a new file. Like /split's createBranch,
  * it uses a separate SessionManager opened on Main's file, so Main's file and Main's live session
  * are never written.
  */
 import { closeSync, existsSync, openSync, readSync, rmSync } from "node:fs";
 import { CURRENT_SESSION_VERSION, type ExtensionContext, SessionManager, type SessionEntry } from "@earendil-works/pi-coding-agent";
 
-export const OWNER = "agent-identity";
+export const OWNER = "sidecar-identity";
 
 export type Identity = {
-	id: string; // the agent's session id
+	id: string; // the sidecar's session id
 	parent: string; // Main's session id
 	parentFile: string;
 	name: string;
-	job: string;
+	instructions: string;
 	work: boolean;
 	model: string; // provider/id
 	thinking: string;
@@ -53,15 +53,15 @@ export function unfinished(branch: SessionEntry[]): { id: string; name: string }
 	return [];
 }
 
-export function startText(name: string, job: string): string {
-	return `Any messages above are a copy of Main's conversation, for context only. From here on you are ${name}, a supporting agent beside Main. Do not continue or redo Main's work.\n\nYour job: ${job}`;
+export function startText(name: string, instructions: string): string {
+	return `Any messages above are a copy of Main's conversation, for context only. From here on you are ${name}, a sidecar beside Main. Do not continue or redo Main's work.\n\nYour instructions: ${instructions}`;
 }
 
-/** Create the agent's session file. Returns its identity and path. */
+/** Create the sidecar's session file. Returns its identity and path. */
 export function createFork(ctx: ExtensionContext, base: Omit<Identity, "id" | "parent" | "parentFile">): { owner: Identity; file: string } {
 	const live = ctx.sessionManager;
 	const mainFile = live.getSessionFile();
-	if (!mainFile) throw new Error("This conversation is not saved to a file (--no-session), so an agent cannot fork it. No pane opened.");
+	if (!mainFile) throw new Error("This conversation is not saved to a file (--no-session), so a sidecar cannot fork it. No pane opened.");
 	const dir = live.getSessionDir();
 	const leaf = live.getLeafId();
 	const hasMessages = live.getBranch().some((e) => e.type === "message");
@@ -72,7 +72,7 @@ export function createFork(ctx: ExtensionContext, base: Omit<Identity, "id" | "p
 		copy = SessionManager.open(mainFile, dir, ctx.cwd);
 		if (copy.getSessionId() !== live.getSessionId() || !copy.getEntry(leaf)) throw new Error("Main's latest message is not saved to disk yet; try again in a moment. No pane opened.");
 		const file = copy.createBranchedSession(leaf); // retargets `copy` to the new file only
-		if (!file || file === mainFile) throw new Error("Pi did not write a separate session file for the agent. No pane opened.");
+		if (!file || file === mainFile) throw new Error("Pi did not write a separate session file for the sidecar. No pane opened.");
 	} else {
 		if (hasMessages) throw new Error("Main's conversation is not on disk yet; try again in a moment. No pane opened.");
 		copy = SessionManager.create(ctx.cwd, dir, { parentSession: mainFile });
@@ -85,7 +85,7 @@ export function createFork(ctx: ExtensionContext, base: Omit<Identity, "id" | "p
 				role: "toolResult",
 				toolCallId: call.id,
 				toolName: call.name,
-				content: [{ type: "text", text: "Not run in this agent; Main continues it." }],
+				content: [{ type: "text", text: "Not run in this sidecar; Main continues it." }],
 				isError: true,
 				timestamp: Date.now(),
 			} as any);
@@ -93,7 +93,7 @@ export function createFork(ctx: ExtensionContext, base: Omit<Identity, "id" | "p
 		const owner: Identity = { ...base, id: copy.getSessionId(), parent: live.getSessionId(), parentFile: mainFile };
 		// A user message, not a custom one: Pi writes a session file only once it holds a user or
 		// assistant message, and a fresh Main has none.
-		copy.appendMessage({ role: "user", content: [{ type: "text", text: startText(base.name, base.job) }], timestamp: Date.now() } as any);
+		copy.appendMessage({ role: "user", content: [{ type: "text", text: startText(base.name, base.instructions) }], timestamp: Date.now() } as any);
 		copy.appendSessionInfo(base.name);
 		copy.appendCustomEntry(OWNER, owner);
 		return { owner, file };

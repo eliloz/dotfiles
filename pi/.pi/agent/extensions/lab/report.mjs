@@ -1,4 +1,4 @@
-// The agent lab's report: Markdown in agents/<name>/reports/ of the real project, plus a screenshot of the
+// The sidecar lab's report: Markdown in sidecars/<name>/reports/ of the real project, plus a screenshot of the
 // lab window. Adapted from herdr-pi-lab's report.mjs (0.5.0). Every quote in it was checked against a
 // screen the Tester was shown; "What each pane showed" comes from the panes' Pi sessions (transcript()).
 import fs from 'node:fs';
@@ -14,11 +14,11 @@ export const headline = s => { const c = core.tally(s); return c.pass === c.tota
 /** Pure: the report's Markdown. */
 export function reportText({ run, results, summary, screens, shot, when = new Date(), id }) {
   const lines = [
-    `# ${run.agent} · lab report`, '',
+    `# ${run.sidecar} · lab report`, '',
     `**${headline(results)}** · ${when.toLocaleString()} · run \`${id}\``, '',
     summary, '',
-    `Agent: \`/agent ${run.work ? '--work ' : ''}${run.agent} --model ${run.agentModel} <Job from ${run.folder}/agent.md, ${run.jobChars} characters>\`${run.jobArrived ? ' · job arrived whole' : ''}`,
-    `Models: Main \`${run.model}\` · ${run.agent} \`${run.agentModel}\` · Tester \`${run.testerModel}\``,
+    `Sidecar: \`/sidecar ${run.work ? '--work ' : ''}${run.sidecar} --model ${run.sidecarModel} <Instructions from ${run.folder}/sidecar.md, ${run.instructionsChars} characters>\`${run.instructionsArrived ? ' · instructions arrived whole' : ''}`,
+    `Models: Main \`${run.model}\` · ${run.sidecar} \`${run.sidecarModel}\` · Tester \`${run.testerModel}\``,
     `Expectations: \`${run.folder}/expectations.md\``, '',
   ];
   for (const i of results.items) {
@@ -30,12 +30,12 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
     lines.push('');
   }
   if (shot) lines.push(`![The lab window at the end of the run](${path.basename(shot)})`, '');
-  lines.push('## What each pane showed', '', '_From each pane\'s Pi session; the agent\'s forked history and job are left out. The Tester never read this._', '');
+  lines.push('## What each pane showed', '', '_From each pane\'s Pi session; the sidecar\'s forked history and instructions are left out. The Tester never read this._', '');
   for (const [k, s] of Object.entries(screens)) lines.push(`### ${k}`, '', fence(s.length > 8000 ? '…' + s.slice(-8000) : s || '(nothing)'), '');
   return lines.join('\n');
 }
 
-/** Write the report (and a window screenshot) into agents/<name>/reports/ of the real project. */
+/** Write the report (and a window screenshot) into sidecars/<name>/reports/ of the real project. */
 export function writeReport(id, { summary }) {
   const run = core.readRun(id), results = core.readResults(id);
   const dir = path.join(run.project, run.folder, 'reports');
@@ -52,11 +52,11 @@ export function writeReport(id, { summary }) {
 }
 
 /**
- * `lab test <Agent> --runs N`: how often each expectation passed. runs = [{ code, res }] in order;
+ * `lab test <Sidecar> --runs N`: how often each expectation passed. runs = [{ code, res }] in order;
  * code 0 passed, 1 failed, 2 no report. A run without a report counts against every expectation.
  */
-export function runsSummary(agent, runs, wanted = runs.length) {
-  const Name = agent.charAt(0).toUpperCase() + agent.slice(1);
+export function runsSummary(sidecar, runs, wanted = runs.length) {
+  const Name = sidecar.charAt(0).toUpperCase() + sidecar.slice(1);
   const clean = runs.filter(r => r.code === 0).length;
   const titles = runs.find(r => r.res?.items)?.res.items.map(i => ({ id: i.id, title: i.title })) || [];
   const width = Math.max(0, ...titles.map(t => `${t.id} · ${t.title}`.length));

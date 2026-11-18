@@ -1,5 +1,5 @@
 /**
- * The tray in an agent pane, below the editor. It always shows the latest numbered finding, so a
+ * The tray in a sidecar pane, below the editor. It always shows the latest numbered finding, so a
  * finding stays in view however much scrolls by. ↑/↓ pick one finding from the last 12 replies,
  * Enter sends it to Main, Esc goes back to the draft. It wraps the editor (it never reads global
  * terminal input) and only acts while the draft is a single line, not a /command, and no completion
@@ -110,7 +110,7 @@ export function startTray(ctx: ExtensionContext, name: string, send: (text: stri
 	});
 
 	ctx.ui.setWidget(
-		"agent-tray",
+		"sidecar-tray",
 		(tui, theme) => {
 			refresh = () => tui.requestRender();
 			return {

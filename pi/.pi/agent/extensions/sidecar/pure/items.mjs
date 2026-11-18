@@ -1,4 +1,4 @@
-// Numbered items in an agent's reply: the pieces that can be sent to Main one at a time.
+// Numbered items in a sidecar's reply: the pieces that can be sent to Main one at a time.
 export const NOTE_LIMIT = 2400;
 
 export function items(text) {
@@ -10,13 +10,13 @@ export function items(text) {
   return out;
 }
 
-/** "#2" or "#1,3" → those items of `reply`, labelled with the agent. Returns null if `ref` is free text. */
+/** "#2" or "#1,3" → those items of `reply`, labelled with the sidecar. Returns null if `ref` is free text. */
 export function pickItems(reply, ref, name) {
   const m = /^#\s*(\d{1,2}(?:\s*,\s*\d{1,2})*)\s*$/.exec(String(ref).trim());
   if (!m) return null;
   if (!reply) throw Error('No reply here has numbered findings yet.');
   const list = items(reply);
-  if (!list.length) throw Error('No reply here has numbered findings yet. Send your own words instead: /agent send main <text>');
+  if (!list.length) throw Error('No reply here has numbered findings yet. Send your own words instead: /sidecar send main <text>');
   const want = [...new Set(m[1].split(',').map(s => Number(s.trim())))];
   const missing = want.filter(n => !list.some(i => i.n === n));
   if (missing.length) throw Error(`No item ${missing.join(', ')} in the latest reply with findings; it has ${list.map(i => i.n).join(', ')}.`);

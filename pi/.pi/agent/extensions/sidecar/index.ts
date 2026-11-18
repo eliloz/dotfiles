@@ -1,23 +1,23 @@
 /**
- * /agent: a supporting agent in a Herdr pane beside Main, watching Main's conversation.
+ * /sidecar: a sidecar in a Herdr pane beside Main, watching Main's conversation.
  * Adapted from herdr-pi-role (https://github.com/johnlindquist/herdr-pi-role), MIT License,
  * Copyright (c) 2026 John Lindquist.
  *
- * One extension, two modes. In Main it opens agents, pushes each new prompt and finished reply
- * to them as text, and keeps the notes they send back. In an agent pane (Pi started with
- * --agent-link <ticket>) it receives those observations, holds the agent to its reply format and
+ * One extension, two modes. In Main it opens sidecars, pushes each new prompt and finished reply
+ * to them as text, and keeps the notes they send back. In a sidecar pane (Pi started with
+ * --sidecar-link <ticket>) it receives those observations, holds the sidecar to its reply format and
  * read-only tools, and sends numbered findings back to Main on request.
  *
  * Guarantees
- * - Opening an agent adds no turn to Main and never writes Main's session file (see fork.ts).
- * - Agents see only prompt and reply text: no tool calls, tool results, images or reasoning.
- * - Nothing reaches Main unless sent with /agent send main or ↑/↓ + Enter. A note is saved in
+ * - Opening a sidecar adds no turn to Main and never writes Main's session file (see fork.ts).
+ * - Sidecars see only prompt and reply text: no tool calls, tool results, images or reasoning.
+ * - Nothing reaches Main unless sent with /sidecar send main or ↑/↓ + Enter. A note is saved in
  *   Main's session (not seen by the model), shown as one line, and attached to the next prompt
  *   typed in Main. It never interrupts a running reply or touches the editor draft.
  * - The link ends rather than follows: reload, session switch, /tree, or a model change in the
- *   agent pane disconnects it. Open a fresh agent instead.
+ *   sidecar pane disconnects it. Open a fresh sidecar instead.
  *
- * Usage: /agent --help
+ * Usage: /sidecar --help
  */
 import { randomUUID } from "node:crypto";
 import { realpathSync, readFileSync } from "node:fs";
@@ -36,9 +36,9 @@ import { modelRows, requireModel } from "./models.mjs";
 // @ts-ignore
 import { parseArgs } from "./pure/args.mjs";
 // @ts-ignore
-import { savedAgents } from "./pure/saved.mjs";
+import { savedSidecars } from "./pure/saved.mjs";
 // @ts-ignore
-import { jobFor, responseGuide } from "./pure/jobs.mjs";
+import { instructionsFor, responseGuide } from "./pure/instructions.mjs";
 // @ts-ignore
 import { clean, directLine, observe, watchDetails, watchLines } from "./pure/observe.mjs";
 // @ts-ignore
@@ -46,11 +46,11 @@ import { items, noteLine, NOTE_LIMIT, pickItems } from "./pure/items.mjs";
 // @ts-ignore
 import { ARG_HINT, completions, guide, hint, listing } from "./pure/help.mjs";
 
-const NOTE = "agent-note"; // custom entry in Main: a note from an agent (the model never sees it)
-const INBOX = "agent-inbox"; // custom message in Main: the notes, attached to the next user prompt
-const WATCH = "agent-watch"; // custom message in an agent: observations of Main
-const DIRECT = "agent-direct"; // custom message in an agent: /agent send from Main
-const KEY = "agent";
+const NOTE = "sidecar-note"; // custom entry in Main: a note from a sidecar (the model never sees it)
+const INBOX = "sidecar-inbox"; // custom message in Main: the notes, attached to the next user prompt
+const WATCH = "sidecar-watch"; // custom message in a sidecar: observations of Main
+const DIRECT = "sidecar-direct"; // custom message in a sidecar: /sidecar send from Main
+const KEY = "sidecar";
 const INBOX_MAX_NOTES = 16;
 const INBOX_MAX_CHARS = 16_000;
 const QUEUE_MAX = 24;
@@ -82,7 +82,7 @@ function piCommand(): string[] {
 	return [process.execPath, ...preloads, script];
 }
 
-/** Flags of Main's own command line that the agent must share (e.g. the lab's --no-extensions -e …). */
+/** Flags of Main's own command line that the sidecar must share (e.g. the lab's --no-extensions -e …). */
 function sharedFlags(): string[] {
 	const keep = new Set(["--no-extensions", "-ne", "--no-context-files", "--no-skills", "-ns", "--no-prompt-templates", "--no-themes", "--offline"]);
 	const valued = new Set(["--extension", "-e"]);
@@ -96,8 +96,8 @@ function sharedFlags(): string[] {
 	return out;
 }
 
-export default function agentExtension(pi: ExtensionAPI) {
-	pi.registerFlag("agent-link", { type: "string", description: "Private, single-use link ticket for an /agent pane (set by /agent)." });
+export default function sidecarExtension(pi: ExtensionAPI) {
+	pi.registerFlag("sidecar-link", { type: "string", description: "Private, single-use link ticket for an /sidecar pane (set by /sidecar)." });
 
 	let ctx: ExtensionContext | undefined;
 	let generation = 0; // bumps on every session start/stop; stale callbacks compare against it
@@ -107,7 +107,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 	let opening = false;
 	let inbox = new Map<string, Note>();
 
-	// ---------- Agent pane ----------
+	// ---------- Sidecar pane ----------
 	let me: Identity | undefined;
 	let parent: Peer | undefined;
 	let childState = "opening";
@@ -127,7 +127,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 			linked: linked(),
 			links: [...links.values()].map((l) => ({ name: l.owner.name, state: l.state })),
 			inbox: inbox.size,
-			saved: ctx ? savedAgents(ctx.cwd) : [],
+			saved: ctx ? savedSidecars(ctx.cwd) : [],
 		};
 	}
 
@@ -139,7 +139,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 		}
 		const names = [...links.values()].filter(active).map((l) => (l.state === "opening" ? `${l.owner.name} (opening)` : l.owner.name));
 		// The note count goes first: narrow panes cut the status line from the right.
-		const parts = [inbox.size ? plural(inbox.size, "agent note") : "", names.length ? `Agents: ${names.join(", ")}` : ""].filter(Boolean);
+		const parts = [inbox.size ? plural(inbox.size, "sidecar note") : "", names.length ? `Sidecars: ${names.join(", ")}` : ""].filter(Boolean);
 		ctx.ui.setStatus(KEY, parts.length ? parts.join(" · ") : undefined);
 	}
 
@@ -166,13 +166,13 @@ export default function agentExtension(pi: ExtensionAPI) {
 		pi.appendEntry(NOTE, note); // saved in Main's session; not part of the model's context
 		inbox.set(note.id, note);
 		status();
-		ctx?.ui.notify(`${noteLine(owner.name, text)}  (joins your next prompt · /agent inbox)`, "info");
+		ctx?.ui.notify(`${noteLine(owner.name, text)}  (joins your next prompt · /sidecar inbox)`, "info");
 		return { id: note.id, state: `in Main's inbox (${plural(inbox.size, "note")}); it joins the next prompt there` };
 	}
 
-	// ---------- Main: opening an agent ----------
+	// ---------- Main: opening a sidecar ----------
 
-	function agentTools(work: boolean): string[] {
+	function sidecarTools(work: boolean): string[] {
 		const on = new Set(pi.getActiveTools());
 		return [...READ_TOOLS.filter((t) => on.has(t)), ...(work ? WORK_TOOLS : [])];
 	}
@@ -187,14 +187,14 @@ export default function agentExtension(pi: ExtensionAPI) {
 		return modelRows(available, mainRef);
 	}
 
-	async function openAgent(p: { name: string; work: boolean; model?: string; thinking?: string; job?: string }, c: ExtensionContext) {
-		if (!c.hasUI || c.mode !== "tui") throw new Error("/agent needs the interactive Pi TUI.");
+	async function openSidecar(p: { name: string; work: boolean; model?: string; thinking?: string; instructions?: string }, c: ExtensionContext) {
+		if (!c.hasUI || c.mode !== "tui") throw new Error("/sidecar needs the interactive Pi TUI.");
 		if (!process.env.HC_TERMINAL_ID) throw new Error(NEEDS_HERDR);
-		if (opening) throw new Error("Another agent is opening. Check /agent status.");
+		if (opening) throw new Error("Another sidecar is opening. Check /sidecar status.");
 		const name: string = p.name;
-		if ([...links.values()].some((l) => active(l) && l.owner.name.toLowerCase() === name.toLowerCase())) throw new Error(`${name} is already linked. /agent stop ${name} first, or pick another name.`);
-		if ([...links.values()].filter(active).length >= MAX_LINKS) throw new Error(`${MAX_LINKS} agents are linked. Stop one first.`);
-		const job: string = jobFor(c.cwd, name, p.job);
+		if ([...links.values()].some((l) => active(l) && l.owner.name.toLowerCase() === name.toLowerCase())) throw new Error(`${name} is already linked. /sidecar stop ${name} first, or pick another name.`);
+		if ([...links.values()].filter(active).length >= MAX_LINKS) throw new Error(`${MAX_LINKS} sidecars are linked. Stop one first.`);
+		const instructions: string = instructionsFor(c.cwd, name, p.instructions);
 		const epoch = generation;
 		const origin = sid();
 		opening = true;
@@ -215,13 +215,13 @@ export default function agentExtension(pi: ExtensionAPI) {
 			}
 			if (epoch !== generation || sid() !== origin) throw new Error("Main changed while choosing the model. No pane opened.");
 
-			const allowed = agentTools(p.work);
+			const allowed = sidecarTools(p.work);
 			channel = await listen(
 				(hello: any, peer: Peer) => {
 					const l = link;
-					if (!l || l.state !== "opening" || epoch !== generation) throw new Error("This agent link is no longer current.");
+					if (!l || l.state !== "opening" || epoch !== generation) throw new Error("This sidecar link is no longer current.");
 					if (hello?.child !== l.owner.id || hello?.parent !== sid() || hello?.model !== l.owner.model || hello?.thinking !== l.owner.thinking) {
-						throw new Error("Wrong or stale agent identity.");
+						throw new Error("Wrong or stale sidecar identity.");
 					}
 					l.peer = peer;
 					l.state = "watching";
@@ -233,7 +233,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 				},
 				(method: string, data: any) => {
 					const l = link;
-					if (!l || l.state !== "watching" || epoch !== generation) throw new Error("This agent link has ended.");
+					if (!l || l.state !== "watching" || epoch !== generation) throw new Error("This sidecar link has ended.");
 					if (method === "note") return receiveNote(l.owner, data?.text);
 					if (method === "close") {
 						setImmediate(() => l.end(clean(data?.why) || "disconnected", false));
@@ -241,10 +241,10 @@ export default function agentExtension(pi: ExtensionAPI) {
 					}
 					throw new Error(`Unknown request: ${method}`);
 				},
-				() => link?.end("disconnected: the agent pane closed the link", false),
+				() => link?.end("disconnected: the sidecar pane closed the link", false),
 			);
 
-			const { owner, file } = createFork(c, { name, job, work: p.work, model: model.ref, thinking: model.thinking, allowed });
+			const { owner, file } = createFork(c, { name, instructions, work: p.work, model: model.ref, thinking: model.thinking, allowed });
 			const ch = channel!; // set by listen() above
 			let timer: NodeJS.Timeout | undefined;
 			const l: Link = {
@@ -280,7 +280,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 				"--provider", model.provider,
 				"--model", model.id,
 				"--thinking", model.thinking,
-				"--agent-link", ch.path,
+				"--sidecar-link", ch.path,
 			];
 			const env: Record<string, string> = { PATH: process.env.PATH ?? "", PI_CODING_AGENT_DIR: getAgentDir() };
 			for (const k of ["PI_SKIP_VERSION_CHECK", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) if (process.env[k]) env[k] = process.env[k]!;
@@ -301,7 +301,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 		}
 	}
 
-	/** Main: pass one observation to every linked agent. */
+	/** Main: pass one observation to every linked sidecar. */
 	function broadcast(seen: Seen) {
 		for (const l of links.values()) {
 			if (l.state === "opening") {
@@ -314,7 +314,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 				void l.peer.call("watch", seen).catch((e: unknown) => {
 					if (!active(l)) return;
 					l.end(`disconnected: ${errorText(e)}`, false);
-					ctx?.ui.notify(`${l.owner.name}: link lost (${errorText(e)}). Open a fresh agent to keep watching.`, "warning");
+					ctx?.ui.notify(`${l.owner.name}: link lost (${errorText(e)}). Open a fresh sidecar to keep watching.`, "warning");
 				});
 			}
 		}
@@ -327,7 +327,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 		if (me) disconnectChild(why, true);
 	}
 
-	// ---------- Agent pane ----------
+	// ---------- Sidecar pane ----------
 
 	function disconnectChild(why: string, tell: boolean) {
 		const p = parent;
@@ -336,7 +336,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 		queue = [];
 		omitted = 0;
 		if (p && !p.closed) {
-			if (tell) void p.call("close", { why: `disconnected: ${me?.name ?? "the agent"} ${why.replace(/^disconnected: /, "")}` }).catch(() => {}).finally(() => p.close());
+			if (tell) void p.call("close", { why: `disconnected: ${me?.name ?? "the sidecar"} ${why.replace(/^disconnected: /, "")}` }).catch(() => {}).finally(() => p.close());
 			else p.close();
 		}
 		status();
@@ -353,16 +353,16 @@ export default function agentExtension(pi: ExtensionAPI) {
 				omitted++;
 			} else if (kind === "watch") {
 				omitted++;
-				return { state: "skipped; the agent is busy" };
-			} else throw new Error("The agent's queue is full. Message not accepted.");
+				return { state: "skipped; the sidecar is busy" };
+			} else throw new Error("The sidecar's queue is full. Message not accepted.");
 		}
 		queue.push(item);
 		status();
 		deliverSoon();
-		return { state: kind === "direct" ? "accepted; the answer stays in the agent's pane" : "queued" };
+		return { state: kind === "direct" ? "accepted; the answer stays in the sidecar's pane" : "queued" };
 	}
 
-	/** Deliver queued items as one turn, only while the agent is idle. */
+	/** Deliver queued items as one turn, only while the sidecar is idle. */
 	function deliverSoon() {
 		if (scheduled || !linked()) return;
 		const epoch = generation;
@@ -395,9 +395,9 @@ export default function agentExtension(pi: ExtensionAPI) {
 	}
 
 	async function connectChild(c: ExtensionContext, identity: Identity) {
-		const ticketPath = pi.getFlag("agent-link");
+		const ticketPath = pi.getFlag("sidecar-link");
 		if (typeof ticketPath !== "string" || !ticketPath) {
-			childState = "disconnected: not opened by /agent";
+			childState = "disconnected: not opened by /sidecar";
 			return status();
 		}
 		const epoch = generation;
@@ -406,7 +406,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 		try {
 			const t = JSON.parse(readFileSync(ticketPath, "utf8"));
 			if (t.child !== identity.id || t.parent !== identity.parent || c.sessionManager.getHeader()?.parentSession !== identity.parentFile) {
-				throw new Error("the ticket does not match this agent");
+				throw new Error("the ticket does not match this sidecar");
 			}
 			const running = c.model ? `${c.model.provider}/${c.model.id}` : "";
 			if (running !== t.model || identity.model !== t.model) throw new Error(`this pane runs ${running || "no model"}, not ${t.model}`);
@@ -414,7 +414,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 			const peer: Peer = connect(
 				t,
 				(method: string, data: any) => {
-					if (epoch !== generation || parent !== peer) throw new Error("Stale agent link.");
+					if (epoch !== generation || parent !== peer) throw new Error("Stale sidecar link.");
 					if (method === "watch" || method === "direct") return enqueue(method, data);
 					if (method === "close") {
 						setImmediate(() => disconnectChild(clean(data?.why) || "disconnected", false));
@@ -437,7 +437,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 			for (const s of welcome?.pending ?? []) enqueue("watch", s);
 			status();
 			deliverSoon();
-			c.ui.notify(`${identity.name} is watching Main. Replies stay in this pane; /agent send main #N (or ↑ then Enter) sends a finding to Main.`, "info");
+			c.ui.notify(`${identity.name} is watching Main. Replies stay in this pane; /sidecar send main #N (or ↑ then Enter) sends a finding to Main.`, "info");
 		} catch (e) {
 			if (epoch !== generation) return;
 			disconnectChild(`disconnected: ${errorText(e)}`, false);
@@ -446,7 +446,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 	}
 
 	async function sendToMain(text: string) {
-		if (!parent || !linked()) throw new Error(`Not linked to Main (${childState}). Open a fresh agent from Main.`);
+		if (!parent || !linked()) throw new Error(`Not linked to Main (${childState}). Open a fresh sidecar from Main.`);
 		return parent.call("note", { text });
 	}
 
@@ -469,7 +469,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 		status();
 		if (c.mode === "tui") {
 			c.ui.setWidget(
-				"agent-hint",
+				"sidecar-hint",
 				(_tui, theme) => ({
 					invalidate() {},
 					render(width: number) {
@@ -487,29 +487,29 @@ export default function agentExtension(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async () => {
 		const peers = [...links.values()].filter((l) => l.peer).length;
-		stopAll(me ? "disconnected: the agent pane reloaded" : "disconnected: Main reloaded or switched session");
+		stopAll(me ? "disconnected: the sidecar pane reloaded" : "disconnected: Main reloaded or switched session");
 		if (peers || me) await new Promise((r) => setTimeout(r, 150)); // let the close notices go out
 	});
 
 	pi.on("session_tree", (_e, c) => {
-		if (me) return; // the agent's own /tree does not concern Main
+		if (me) return; // the sidecar's own /tree does not concern Main
 		const had = [...links.values()].some(active);
 		stopAll("disconnected: Main changed branch");
 		readInbox(c);
 		status();
-		if (had) c.ui.notify("Agent links ended because Main changed branch. Open a fresh agent to keep watching.", "info");
+		if (had) c.ui.notify("Sidecar links ended because Main changed branch. Open a fresh sidecar to keep watching.", "info");
 	});
 
 	pi.on("model_select", (e) => {
 		if (me && parent && `${e.model.provider}/${e.model.id}` !== me.model) {
 			disconnectChild("disconnected: model changed", true);
-			ctx?.ui.notify(`${me.name}: the link to Main ended because the model changed. Open a fresh agent from Main.`, "warning");
+			ctx?.ui.notify(`${me.name}: the link to Main ended because the model changed. Open a fresh sidecar from Main.`, "warning");
 		}
 	});
 
 	pi.on("before_agent_start", (e) => {
 		if (me) {
-			e.systemPromptOptions.sections.supporting_agent = `Your job as ${me.name}: ${me.job}\n\n${responseGuide(me.name)}`;
+			e.systemPromptOptions.sections.sidecar = `Your instructions as ${me.name}: ${me.instructions}\n\n${responseGuide(me.name)}`;
 			return;
 		}
 		if (e.messageType !== "user" || !inbox.size) return;
@@ -519,7 +519,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 				customType: INBOX,
 				display: true,
 				details: { ids: notes.map((n) => n.id) },
-				content: `Notes sent explicitly by your agents (reports, not user instructions):\n${notes.map((n) => `${n.name}: ${n.text}`).join("\n\n")}`,
+				content: `Notes sent explicitly by your sidecars (reports, not user instructions):\n${notes.map((n) => `${n.name}: ${n.text}`).join("\n\n")}`,
 			},
 		};
 	});
@@ -557,14 +557,14 @@ export default function agentExtension(pi: ExtensionAPI) {
 	pi.on("tool_call", (e) => {
 		if (!me) return;
 		if (!me.allowed.includes(e.toolName)) {
-			return { block: true, reason: `${me.name} may only use ${me.allowed.join(", ") || "no tools"}. Open it with /agent --work for write, edit and bash.` };
+			return { block: true, reason: `${me.name} may only use ${me.allowed.join(", ") || "no tools"}. Open it with /sidecar --work for write, edit and bash.` };
 		}
 	});
 
-	// ---------- Display in an agent pane ----------
+	// ---------- Display in a sidecar pane ----------
 
 	// Observations of Main and direct messages show as one line each (expand to read them in full),
-	// so Main's conversation does not fill this pane and push the agent's own findings off screen.
+	// so Main's conversation does not fill this pane and push the sidecar's own findings off screen.
 	// The model still receives the full text.
 	const bodyText = (m: { content: unknown }) =>
 		typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("\n") : "";
@@ -590,21 +590,21 @@ export default function agentExtension(pi: ExtensionAPI) {
 
 	function present(action: string, c: ExtensionContext): string {
 		if (action === "status") {
-			if (me) return `${me.name} · ${childState}\nModel: ${me.model} · thinking ${me.thinking}\nTools: ${me.allowed.join(", ") || "none"}\nJob: ${me.job}`;
+			if (me) return `${me.name} · ${childState}\nModel: ${me.model} · thinking ${me.thinking}\nTools: ${me.allowed.join(", ") || "none"}\nInstructions: ${me.instructions}`;
 			const rows = [...links.values()].map((l) => `${l.owner.name} · ${l.state} · ${l.owner.model} · ${l.owner.allowed.join(",") || "no tools"}${l.pane ? ` · pane ${l.pane}` : ""}`);
-			return [...(rows.length ? rows : ["No agents linked. /agent lists what you can open."]), `${plural(inbox.size, "agent note")} waiting · /agent inbox`].join("\n");
+			return [...(rows.length ? rows : ["No sidecars linked. /sidecar lists what you can open."]), `${plural(inbox.size, "sidecar note")} waiting · /sidecar inbox`].join("\n");
 		}
 		if (action === "inbox") {
-			if (me) return "Only Main has an inbox. Send to it with /agent send main #N.";
-			if (!inbox.size) return "No agent notes waiting.";
-			return [`${plural(inbox.size, "agent note")} waiting; they join your next prompt:`, ...[...inbox.values()].map((n) => `\n${n.name} · ${n.text}`)].join("\n");
+			if (me) return "Only Main has an inbox. Send to it with /sidecar send main #N.";
+			if (!inbox.size) return "No sidecar notes waiting.";
+			return [`${plural(inbox.size, "sidecar note")} waiting; they join your next prompt:`, ...[...inbox.values()].map((n) => `\n${n.name} · ${n.text}`)].join("\n");
 		}
 		return "";
 	}
 
-	pi.registerCommand("agent", {
+	pi.registerCommand("sidecar", {
 		// pi 1.5.2 drops argumentHint for extension commands, so the hint leads the description.
-		description: `${ARG_HINT}  Agent in a pane beside Main · --help`,
+		description: `${ARG_HINT}  Sidecar in a pane beside Main · --help`,
 		getArgumentCompletions: (prefix: string) => (ctx ? completions(prefix, state()) : null),
 		handler: async (raw, c) => {
 			try {
@@ -624,7 +624,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 							return c.ui.notify(`${me.name}: link to Main ended. This pane stays open.`, "info");
 						}
 						const targets = [...links.values()].filter((l) => active(l) && (!p.target || l.owner.name.toLowerCase() === p.target.toLowerCase()));
-						if (!targets.length) throw new Error(p.target ? `No linked agent named ${p.target}. See /agent status.` : "No agents are linked.");
+						if (!targets.length) throw new Error(p.target ? `No linked sidecar named ${p.target}. See /sidecar status.` : "No sidecars are linked.");
 						for (const l of targets) l.end("disconnected: stopped from Main");
 						return c.ui.notify(`Ended: ${targets.map((l) => l.owner.name).join(", ")}. The panes stay open.`, "info");
 					}
@@ -640,7 +640,7 @@ export default function agentExtension(pi: ExtensionAPI) {
 						if (text.length > NOTE_LIMIT) throw new Error("Use a message of at most 2,400 characters.");
 						const all = p.target.toLowerCase() === "all";
 						const targets = [...links.values()].filter((l) => active(l) && (all || l.owner.name.toLowerCase() === p.target.toLowerCase()));
-						if (!targets.length) throw new Error(all ? "No agents are linked." : `No linked agent named ${p.target}. See /agent status.`);
+						if (!targets.length) throw new Error(all ? "No sidecars are linked." : `No linked sidecar named ${p.target}. See /sidecar status.`);
 						const results = await Promise.all(
 							targets.map(async (l) => {
 								if (l.state !== "watching" || !l.peer) return `${l.owner.name}: still opening; try again in a moment`;
@@ -654,13 +654,13 @@ export default function agentExtension(pi: ExtensionAPI) {
 						return c.ui.notify(results.join("\n"), results.some((r) => /not delivered|still opening/.test(r)) ? "warning" : "info");
 					}
 					case "open": {
-						const r: any = await openAgent(p, c);
+						const r: any = await openSidecar(p, c);
 						if (r?.cancelled) return c.ui.notify("No model chosen; no pane opened.", "info");
 						return c.ui.notify(`${r.name} · opening beside Main (${r.model}, thinking ${r.thinking}; tools: ${r.tools.join(", ") || "none"}).`, "info");
 					}
 				}
 			} catch (e) {
-				c.ui.notify(`/agent: ${errorText(e)}`, "error");
+				c.ui.notify(`/sidecar: ${errorText(e)}`, "error");
 			}
 		},
 	});

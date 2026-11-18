@@ -1,4 +1,4 @@
-// One private link per agent: a 127.0.0.1 TCP socket, opened with a single-use ticket file.
+// One private link per sidecar: a 127.0.0.1 TCP socket, opened with a single-use ticket file.
 // Frames are JSON lines {id, method, data}; every call gets a receipt {id, value} or {id, error}.
 import net from 'node:net';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -18,8 +18,8 @@ export function wire(socket, handle, onClose) {
 
   function write(frame) {
     const line = JSON.stringify(frame) + '\n';
-    if (closed || socket.destroyed || !socket.writable) throw Error('The agent link is closed.');
-    if (Buffer.byteLength(line) > MAX) throw Error('Message too large for the agent link.');
+    if (closed || socket.destroyed || !socket.writable) throw Error('The sidecar link is closed.');
+    if (Buffer.byteLength(line) > MAX) throw Error('Message too large for the sidecar link.');
     socket.write(line);
   }
   async function answer(row) {
@@ -92,7 +92,7 @@ export async function listen(onHello, handle, onClose) {
         const given = Buffer.from(String(data?.token ?? ''), 'hex');
         if (taken || closed || method !== 'hello' || given.length !== token.length || !timingSafeEqual(given, token)) {
           setImmediate(() => sock.destroy());
-          throw Error('Invalid agent ticket.');
+          throw Error('Invalid sidecar ticket.');
         }
         const welcome = await onHello(data, peer);
         accepted = taken = true;
@@ -126,7 +126,7 @@ export async function listen(onHello, handle, onClose) {
   };
 }
 
-/** The agent's side. */
+/** The sidecar's side. */
 export function connect(ticket, handle, onClose) {
   return wire(net.connect(ticket.port, '127.0.0.1'), handle, onClose);
 }

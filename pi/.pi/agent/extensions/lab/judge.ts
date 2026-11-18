@@ -1,5 +1,5 @@
 /**
- * The lab agent's only tools. Loaded explicitly (`pi -p --no-extensions -e judge.ts --tools lab_*`),
+ * The Tester's only tools. Loaded explicitly (`pi -p --no-extensions -e judge.ts --tools lab_*`),
  * never auto-discovered: Pi only discovers lab/index.ts in this folder.
  * Every tool result is text the lab itself captured from the Herdr Lab window; lab_step refuses a
  * pass whose quote is not in that captured text.
@@ -13,7 +13,7 @@ const out = (t: string) => ({ content: [{ type: "text" as const, text: t }], det
 
 function runId(): string {
 	const id = process.env.LAB_RUN;
-	if (!id || !core.ID_RE.test(id) || !core.readRun(id)) throw new Error("This lab agent was not started by the lab");
+	if (!id || !core.ID_RE.test(id) || !core.readRun(id)) throw new Error("This Tester was not started by the lab");
 	return id;
 }
 

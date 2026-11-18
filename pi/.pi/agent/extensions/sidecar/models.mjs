@@ -1,4 +1,4 @@
-// Which model an agent runs on. Pure: rows come from Pi's model registry in index.ts.
+// Which model a sidecar runs on. Pure: rows come from Pi's model registry in index.ts.
 // row: { ref, provider, id, name, levels: string[], thinking, main, fast }
 
 export const FAST = [/^anthropic\/claude-haiku-5-5$/, /haiku/i];
@@ -24,8 +24,8 @@ export function modelRows(available, mainRef) {
 export function requireModel(rows, requested, thinking) {
   const row = requested === undefined || requested === 'fast' ? rows.find(r => r.fast) : requested === 'main' ? rows.find(r => r.main) : rows.find(r => r.ref === requested);
   if (!row) {
-    if (requested === 'main') throw Error('Main\'s model is not available to agents. Choose one with --model provider/id. No pane opened.');
-    throw Error(`${requested ?? 'No model'} is not available here. Run /agent NAME without --model to pick one. No pane opened.`);
+    if (requested === 'main') throw Error('Main\'s model is not available to sidecars. Choose one with --model provider/id. No pane opened.');
+    throw Error(`${requested ?? 'No model'} is not available here. Run /sidecar NAME without --model to pick one. No pane opened.`);
   }
   if (thinking === undefined) return row;
   if (!row.levels.includes(thinking)) throw Error(`${row.ref} does not support thinking ${thinking}; use ${row.levels.join(', ')}. No pane opened.`);

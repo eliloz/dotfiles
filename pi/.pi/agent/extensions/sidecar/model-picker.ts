@@ -1,5 +1,5 @@
 /**
- * Searchable model picker for one agent. The fast default is first and highlighted.
+ * Searchable model picker for one sidecar. The fast default is first and highlighted.
  * Tab cycles the thinking level. Main's model is never changed.
  */
 import { DynamicBorder, getSelectListTheme, type ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -98,7 +98,7 @@ export async function pickModel(ctx: ExtensionContext, name: string, rows: Row[]
 			view.addChild(input);
 			view.addChild(slot);
 			view.addChild(detail);
-			view.addChild(new Text(theme.fg("dim", "Type to filter · ↑↓ choose · Enter opens the agent · Esc cancels"), 1, 0));
+			view.addChild(new Text(theme.fg("dim", "Type to filter · ↑↓ choose · Enter opens the sidecar · Esc cancels"), 1, 0));
 			view.addChild(new DynamicBorder());
 			filter();
 			return view;

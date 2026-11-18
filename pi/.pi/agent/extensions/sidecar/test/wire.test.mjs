@@ -5,7 +5,7 @@ import { listen, connect } from '../wire.mjs';
 
 const closedOf = peer => new Promise(r => { const t = setInterval(() => { if (peer.closed) { clearInterval(t); r(); } }, 10); });
 
-test('one private ticket links one agent; receipts flow both ways; the ticket is single-use', async () => {
+test('one private ticket links one sidecar; receipts flow both ways; the ticket is single-use', async () => {
   const notes = [];
   let mainSide, ended = 0;
   const channel = await listen(
@@ -20,7 +20,7 @@ test('one private ticket links one agent; receipts flow both ways; the ticket is
 
   // A wrong token is refused and the socket dropped.
   const stranger = connect({ ...ticket, token: '00'.repeat(32) }, () => null, () => {});
-  await assert.rejects(stranger.call('hello', { token: '00'.repeat(32), child: 'child-1' }), /Invalid agent ticket|closed/);
+  await assert.rejects(stranger.call('hello', { token: '00'.repeat(32), child: 'child-1' }), /Invalid sidecar ticket|closed/);
 
   const watched = [];
   const child = connect(ticket, (method, data) => { if (method === 'watch') { watched.push(data.text); return { state: 'queued' }; } throw Error('Unknown'); }, () => {});
@@ -46,7 +46,7 @@ test('one private ticket links one agent; receipts flow both ways; the ticket is
 });
 
 test('a hello with the right token but wrong identity is refused and the ticket stays usable', async () => {
-  const channel = await listen(hello => { if (hello.child !== 'right') throw Error('Wrong or stale agent identity.'); return { ok: true }; }, () => null, () => {});
+  const channel = await listen(hello => { if (hello.child !== 'right') throw Error('Wrong or stale sidecar identity.'); return { ok: true }; }, () => null, () => {});
   channel.ticket({});
   const ticket = JSON.parse(readFileSync(channel.path, 'utf8'));
   const wrong = connect(ticket, () => null, () => {});

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parse, contains, judged, observed, steps, job, access, locate, extraPanes } from '../expectations.mjs';
+import { parse, contains, judged, observed, steps, instructions, access, locate, extraPanes } from '../expectations.mjs';
 
-// John's agents/critic/expectations.md (lesson, S04E01).
+// John's sidecars/critic/expectations.md (lesson, S04E01).
 const critic = `# Critic expectations
 
 ## Before
@@ -40,12 +40,12 @@ test('the Critic example parses into a Before step and three expectations', () =
   assert.deepEqual(judged(s.items[0]).map(l => [l.kind, l.pane]), [['expect', 'Critic'], ['never', 'Critic']]);
 });
 
-test('(Agent) and any spelling of the name mean the agent; See/Absent keep the quoted text', () => {
-  const s = parse('## A\nDo: hi\nSee (Agent): "1 agent note"\nAbsent (main): “secret”\nExpect (notes): replies', 'Notes');
-  assert.deepEqual(observed(s.items[0]).map(l => [l.kind, l.pane, l.text]), [['see', 'Notes', '1 agent note'], ['absent', 'Main', 'secret']]);
+test('(Sidecar) and any spelling of the name mean the sidecar; See/Absent keep the quoted text', () => {
+  const s = parse('## A\nDo: hi\nSee (Sidecar): "1 sidecar note"\nAbsent (main): “secret”\nExpect (notes): replies', 'Notes');
+  assert.deepEqual(observed(s.items[0]).map(l => [l.kind, l.pane, l.text]), [['see', 'Notes', '1 sidecar note'], ['absent', 'Main', 'secret']]);
   assert.equal(judged(s.items[0])[0].pane, 'Notes');
   assert.equal(steps(s.items[0])[0].pane, 'Main'); // Do without a pane is Main
-  assert.equal(parse('## A\nDo (Repeater): /agent send main #1\nSee (Main): "1 agent note"', 'Repeater').items[0].lines[0].pane, 'Repeater');
+  assert.equal(parse('## A\nDo (Repeater): /sidecar send main #1\nSee (Main): "1 sidecar note"', 'Repeater').items[0].lines[0].pane, 'Repeater');
 });
 
 test('lists, numbered headings, comments and indented continuation lines', () => {
@@ -69,7 +69,7 @@ test('like herdr-pi-lab: another pane name is kept and listed, Before may come a
   assert.deepEqual(extraPanes(parse(critic, 'Critic'), 'Critic'), []);
   const late = parse('## A\nExpect: y\n## Before\nDo: hi', 'Critic');
   assert.deepEqual(late.before.map(l => l.text), ['hi']);
-  // A Before Do line for the agent parses; startAgentLab refuses it when the lab runs (as herdr-pi-lab's start does).
+  // A Before Do line for the sidecar parses; startSidecarLab refuses it when the lab runs (as herdr-pi-lab's start does).
   assert.equal(parse('## Before\nDo (Critic): hi\n## A\nExpect: y', 'Critic').before[0].pane, 'Critic');
 });
 
@@ -87,42 +87,42 @@ test('screen matching ignores wrapping, case and punctuation, not words', () => 
   assert.equal(contains('It’s fine', "it's fine"), true);
 });
 
-test('the job is the "## Job" section of agent.md, as /agent reads it', () => {
+test('the instructions are the "## Instructions" section of sidecar.md, as /sidecar reads it', () => {
   const d = tmp();
   try {
-    assert.equal(job(d), undefined);
-    fs.writeFileSync(path.join(d, 'agent.md'), '# Repeater\n\n## Job\nRepeat Main\'s last prompt\nin five words.\n\n## Use it when\n- testing\n');
-    assert.equal(job(d), "Repeat Main's last prompt in five words.");
-    // No "## Job" heading: the whole file minus its title, as herdr-pi-lab reads it.
-    fs.writeFileSync(path.join(d, 'agent.md'), '# Repeater\nJust prose.\n');
-    assert.equal(job(d), 'Just prose.');
-    fs.writeFileSync(path.join(d, 'agent.md'), '# Repeater\n## Job\n\n## Examples\n');
-    assert.throws(() => job(d), /needs a "## Job" section/);
-    fs.writeFileSync(path.join(d, 'agent.md'), `## Job\n${'x'.repeat(2401)}\n`);
-    assert.throws(() => job(d), /2,401 characters/);
+    assert.equal(instructions(d), undefined);
+    fs.writeFileSync(path.join(d, 'sidecar.md'), '# Repeater\n\n## Instructions\nRepeat Main\'s last prompt\nin five words.\n\n## Use it when\n- testing\n');
+    assert.equal(instructions(d), "Repeat Main's last prompt in five words.");
+    // No "## Instructions" heading: the whole file minus its title, as herdr-pi-lab reads it.
+    fs.writeFileSync(path.join(d, 'sidecar.md'), '# Repeater\nJust prose.\n');
+    assert.equal(instructions(d), 'Just prose.');
+    fs.writeFileSync(path.join(d, 'sidecar.md'), '# Repeater\n## Instructions\n\n## Examples\n');
+    assert.throws(() => instructions(d), /needs a "## Instructions" section/);
+    fs.writeFileSync(path.join(d, 'sidecar.md'), `## Instructions\n${'x'.repeat(2401)}\n`);
+    assert.throws(() => instructions(d), /2,401 characters/);
   } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });
 
-test('Access: work on its own line opens the agent with --work', () => {
+test('Access: work on its own line opens the sidecar with --work', () => {
   const d = tmp();
   try {
     assert.equal(access(d), 'read');
-    fs.writeFileSync(path.join(d, 'agent.md'), '# Fixer\nAccess: work\n\n## Job\nFix the named file.\n');
+    fs.writeFileSync(path.join(d, 'sidecar.md'), '# Fixer\nAccess: work\n\n## Instructions\nFix the named file.\n');
     assert.equal(access(d), 'work');
-    fs.writeFileSync(path.join(d, 'agent.md'), '# Notes\n\n## Job\nKeep notes. Access: work is not a line here.\n');
+    fs.writeFileSync(path.join(d, 'sidecar.md'), '# Notes\n\n## Instructions\nKeep notes. Access: work is not a line here.\n');
     assert.equal(access(d), 'read');
   } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });
 
-test('locate: agents/<name>/ in lower case; a bad name is refused', () => {
+test('locate: sidecars/<name>/ in lower case; a bad name is refused', () => {
   const d = tmp();
   try {
     const loc = locate(d, 'Critic');
-    assert.equal(loc.file, path.join(d, 'agents/critic/expectations.md'));
-    assert.equal(loc.folder, 'agents/critic');
+    assert.equal(loc.file, path.join(d, 'sidecars/critic/expectations.md'));
+    assert.equal(loc.folder, 'sidecars/critic');
     assert.equal(loc.missing, true);
     fs.mkdirSync(loc.dir, { recursive: true }); fs.writeFileSync(loc.file, critic);
     assert.equal(locate(d, 'critic').missing, false);
-    assert.throws(() => locate(d, '../x'), /not an agent name/);
+    assert.throws(() => locate(d, '../x'), /not a sidecar name/);
   } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });

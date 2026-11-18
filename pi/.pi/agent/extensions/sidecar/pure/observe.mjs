@@ -1,4 +1,4 @@
-// What an agent may see of Main: user prompt text and finished reply text. Nothing else.
+// What a sidecar may see of Main: user prompt text and finished reply text. Nothing else.
 export const LIMIT = 4000;
 
 export const clean = s => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '').trim();
@@ -39,14 +39,14 @@ export function observe(m) {
 /** First non-empty line of a text, for a one-line preview. */
 const firstLine = s => String(s ?? '').split('\n').map(l => l.trim()).find(Boolean) ?? '';
 
-/** What an agent pane stores about one delivered batch (the full text goes to the model only). */
+/** What a sidecar pane stores about one delivered batch (the full text goes to the model only). */
 export function watchDetails(batch, skipped = 0) {
   return { skipped, seen: batch.map(v => ({ from: v.from, lines: String(v.text).split('\n').length, preview: firstLine(v.text).slice(0, 160) })) };
 }
 
 /**
- * One short line per observation, so Main's conversation does not fill the agent's pane and push
- * the agent's own findings off screen. Example: 👁 Main's reply (9 lines) · Here are three words
+ * One short line per observation, so Main's conversation does not fill the sidecar's pane and push
+ * the sidecar's own findings off screen. Example: 👁 Main's reply (9 lines) · Here are three words
  */
 export function watchLines(details) {
   const out = [];

@@ -1,5 +1,5 @@
 // Lab core: a private Herdr (own app copy, app home, core, socket) with its own Pi profile and a
-// copy of the project, driven through hc and judged from the screen by a black-box lab agent.
+// copy of the project, driven through hc and judged from the screen by a black-box Tester.
 //
 // Safety rule: every hc / herdr-app call goes through run(id, …), which uses env(id) — the caller's
 // environment with every Herdr, hc, Pi and XDG-state variable removed and the lab's own set. Nothing
@@ -12,7 +12,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parse, locate, job, access, extraPanes } from './expectations.mjs';
+import { parse, locate, instructions, access, extraPanes } from './expectations.mjs';
 
 export const HERE = path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)));
 export const LAB_HOME = process.env.LAB_HOME || path.join(os.homedir(), '.lab');
@@ -51,7 +51,7 @@ export function dirs(id) {
 export const readRun = id => readJson(dirs(id).run, undefined);
 export const writeRun = (id, patch) => { const next = { ...(readRun(id) || {}), ...patch, updated: new Date().toISOString() }; writeJson(dirs(id).run, next); return next; };
 export const coreUp = id => fs.existsSync(dirs(id).coreSocket);
-/** An agent lab's checklist: { items: [{ id, title, verdict, … }], result, summary, report }. Only the Tester writes it. */
+/** A sidecar lab's checklist: { items: [{ id, title, verdict, … }], result, summary, report }. Only the Tester writes it. */
 export const readResults = id => readJson(dirs(id).results, undefined);
 export const writeResults = (id, v) => writeJson(dirs(id).results, v);
 export function tally(s) {
@@ -168,11 +168,11 @@ export function defaultModel() {
 }
 
 /**
- * Extensions that carry over into the lab's Pi panes, as in herdr-pi-lab: /split and /agent wherever this
+ * Extensions that carry over into the lab's Pi panes, as in herdr-pi-lab: /split and /sidecar wherever this
  * computer has them (the project's .pi or your Pi extensions), plus LAB_EXTENSIONS (paths
  * separated by ":"). Nothing else from your Pi setup is loaded there, and never /lab itself.
  */
-export const CARRIED = ['split', 'agent'];
+export const CARRIED = ['split', 'sidecar'];
 export function carriedExtensions(project = process.cwd()) {
   const found = [];
   const file = c => [c, `${c}.ts`, `${c}.js`, path.join(c, 'index.ts'), path.join(c, 'index.js')].find(f => { try { return fs.statSync(f).isFile(); } catch { return false; } });
@@ -195,38 +195,38 @@ export function carriedExtensions(project = process.cwd()) {
 const LEAVE_OUT = [
   ['git', /(^|\/)\.git(\/|$)|(^|\/)\.gitmodules$/],
   ['secret', /(^|\/)\.env($|\.|rc$)|(^|\/)\.(netrc|npmrc|pypirc)$|(^|\/)id_[^/]*$|\.(pem|key|p12|pfx|jks|keystore|asc|gpg)$|(^|\/)([^/]*[-_.])?(auth|credentials?|secrets?|tokens?|passwords?)([-_.][^/]*)?\.(json|ya?ml|toml|txt|ini)$|(^|\/)service[-_]?account[^/]*\.json$/i],
-  ['agent', /(^|\/)(AGENTS|CLAUDE|GEMINI)(\.override)?\.md$|(^|\/)\.(pi|claude|cursor|codex|gemini|windsurf|aider[^/]*)(\/|$)|^(agents|roles)(\/|$)|(^|\/)(agents|roles)\/(.*\/)?[^/]*\.md$|(^|\/)\.cursorrules$|copilot-instructions\.md$/i],
+  ['agent', /(^|\/)(AGENTS|CLAUDE|GEMINI)(\.override)?\.md$|(^|\/)\.(pi|claude|cursor|codex|gemini|windsurf|aider[^/]*)(\/|$)|^(sidecars|agents|roles)(\/|$)|(^|\/)(sidecars|agents|roles)\/(.*\/)?[^/]*\.md$|(^|\/)\.cursorrules$|copilot-instructions\.md$/i],
   ['expectations', /expectation|(^|\/)lab-scenarios\.md$|(^|\/)lab-reports(\/|$)/i],
   // herdr-pi-lab's SKIP list: reports and build or cache folders, wherever they are.
   ['generated', /(^|\/)(reports|node_modules|\.cache|dist|build|\.next|\.venv|__pycache__)(\/|$)/i],
 ];
 /**
  * Why a project file (path relative to the project) stays out of the lab copy, or undefined when it goes in.
- * agentFolder ("agents/critic") is the agent under test; a scenario check has none.
+ * sidecarFolder ("sidecars/critic") is the sidecar under test; a scenario check has none.
  *
- * The rule: testing agent X, the files directly in agents/X/ go in (a glossary, memories: what its job
- * tells it to read), but never agent.md (the agent sees only its Job, typed into /agent), any expectations
- * file, or a subfolder such as reports/. No other agent's folder goes in, and a check copies no agents/ at all.
- * Secrets stay out everywhere. (herdr-pi-lab 0.5.0 copies agent.md too; the lesson says never: we follow the lesson.)
+ * The rule: testing sidecar X, the files directly in sidecars/X/ go in (a glossary, memories: what its instructions
+ * tell it to read), but never sidecar.md (the sidecar sees only its Instructions, typed into /sidecar), any expectations
+ * file, or a subfolder such as reports/. No other sidecar's folder goes in, and a scenario copies no sidecars/ at all.
+ * Secrets stay out everywhere. (herdr-pi-lab 0.5.0 copies sidecar.md too; the lesson says never: we follow the lesson.)
  */
-export function leaveOutReason(file, agentFolder) {
+export function leaveOutReason(file, sidecarFolder) {
   const f = String(file).replace(/\\/g, '/');
   for (const [why, re] of LEAVE_OUT) {
-    if (why === 'agent' && ownFile(f, agentFolder)) continue;
+    if (why === 'agent' && ownFile(f, sidecarFolder)) continue;
     if (re.test(f)) return why;
   }
 }
-function ownFile(f, agentFolder) {
-  const own = String(agentFolder || '').replace(/\\/g, '/').replace(/\/+$/, '');
-  if (!/^agents\/[a-z][a-z0-9_-]{0,31}$/i.test(own) || !f.toLowerCase().startsWith(own.toLowerCase() + '/')) return false;
+function ownFile(f, sidecarFolder) {
+  const own = String(sidecarFolder || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!/^sidecars\/[a-z][a-z0-9_-]{0,31}$/i.test(own) || !f.toLowerCase().startsWith(own.toLowerCase() + '/')) return false;
   const name = f.slice(own.length + 1);
-  return !name.includes('/') && !/^(agent|AGENTS|CLAUDE|GEMINI)(\.override)?\.md$/i.test(name);
+  return !name.includes('/') && !/^(sidecar|AGENTS|CLAUDE|GEMINI)(\.override)?\.md$/i.test(name);
 }
 /** Does this file go into the lab copy? See leaveOutReason. */
-export const labCopies = (file, agentFolder) => !leaveOutReason(file, agentFolder);
+export const labCopies = (file, sidecarFolder) => !leaveOutReason(file, sidecarFolder);
 
-/** Copy only git-tracked files, without .git, secrets, agent files or expectations. No new repository. */
-export function copyProject(project, dest, withheld = [], agentFolder) {
+/** Copy only git-tracked files, without .git, secrets, sidecar files or expectations. No new repository. */
+export function copyProject(project, dest, withheld = [], sidecarFolder) {
   const ls = spawnSync('git', ['-C', project, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 << 20 });
   if (ls.status !== 0) throw Error(`${project} is not a git repository, so it has no tracked files to copy. Run the lab from inside a git project.`);
   const never = new Set(withheld.map(w => path.relative(project, path.resolve(project, w))));
@@ -235,7 +235,7 @@ export function copyProject(project, dest, withheld = [], agentFolder) {
   mkdir(dest);
   for (const f of ls.stdout.split('\0').filter(Boolean)) {
     if (never.has(f)) { left.withheld.push(f); continue; }
-    const why = leaveOutReason(f, agentFolder);
+    const why = leaveOutReason(f, sidecarFolder);
     if (why) { left[why].push(f); continue; }
     const a = path.join(project, f);
     let s; try { s = fs.lstatSync(a); } catch { left.other.push(`${f} (missing on disk)`); continue; }
@@ -284,7 +284,7 @@ function newLab(project, patch) {
 async function openLab(id, o, progress) {
   const d = dirs(id), r = readRun(id);
   progress('Copying the project (tracked files only)');
-  const copied = copyProject(r.project, r.copy, o.withheld || [], o.agentFolder);
+  const copied = copyProject(r.project, r.copy, o.withheld || [], o.sidecarFolder);
   writeRun(id, { copied, made: ['run folder', 'project copy'] });
 
   progress('Making the lab Pi profiles (linked to your model logins)');
@@ -340,54 +340,54 @@ export async function startLab(o = {}, progress = () => {}) {
   } catch (err) { throw await failed(id, o, err); }
 }
 
-// ---------- isolate: start a lab for one agent ----------
+// ---------- isolate: start a lab for one sidecar ----------
 
-/** Guest Main reads but never runs commands or edits: the lab tests the agent, not Main's coding (herdr-pi-lab). */
+/** Guest Main reads but never runs commands or edits: the lab tests the sidecar, not Main's coding (herdr-pi-lab). */
 export const MAIN_TOOLS = 'read,grep,find,ls';
 export const TESTER_TOOLS = ['lab_do', 'lab_look', 'lab_find', 'lab_verdict', 'lab_finish'];
 const TESTER = path.join(HERE, 'tester', 'index.ts');
 
-/** The /agent line Main gets. The job is the "## Job" text of agent.md, typed as one line. */
-export const agentCommand = ({ name, work, model, job }) => `/agent ${work ? '--work ' : ''}${name} --model ${model} ${job}`;
+/** The /sidecar line Main gets. The instructions are the "## Instructions" text of sidecar.md, typed as one line. */
+export const sidecarCommand = ({ name, work, model, instructions }) => `/sidecar ${work ? '--work ' : ''}${name} --model ${model} ${instructions}`;
 
 /**
- * Start a lab for agents/<name>/: copy the project (the agent's own files, never agent.md, expectations
- * or reports), open guest Main (Pi, only /agent, read-only tools, --name Main), run the Before lines,
- * open the agent with /agent, check that its whole job arrived, then open the Tester below it.
- * Until tester/index.ts exists the lab stops before the Tester (phase "agent"). Returns the run id.
+ * Start a lab for sidecars/<name>/: copy the project (the sidecar's own files, never sidecar.md, expectations
+ * or reports), open guest Main (Pi, only /sidecar, read-only tools, --name Main), run the Before lines,
+ * open the sidecar with /sidecar, check that its whole instructions arrived, then open the Tester below it.
+ * Until tester/index.ts exists the lab stops before the Tester (phase "sidecar"). Returns the run id.
  */
-export async function startAgentLab(o = {}, progress = () => {}) {
+export async function startSidecarLab(o = {}, progress = () => {}) {
   if (process.platform !== 'darwin') throw Error('The lab is built for macOS (it copies and signs Herdr.app)');
   const project = path.resolve(o.project || process.cwd());
   const loc = locate(project, o.name);
   if (loc.missing) throw Error(`No expectations for ${o.name} yet. Write ${path.relative(project, loc.file)}, or run /lab new ${o.name} to write them together.`);
   const name = o.name.charAt(0).toUpperCase() + o.name.slice(1);
   const spec = parse(fs.readFileSync(loc.file, 'utf8'), name);
-  const agentJob = job(loc.dir);
-  if (!agentJob) throw Error(`${name} has no agent.md yet. Write ${path.relative(project, loc.agentFile)} with a "## Job" section first (or run /lab new ${name}).`);
-  const agentExt = carriedExtensions(project).find(t => t.name === 'agent');
-  if (!agentExt) throw Error('/agent was not found (project .pi/extensions, ~/.pi/agent/extensions or its git package), so the lab cannot open the agent.');
+  const sidecarInstructions = instructions(loc.dir);
+  if (!sidecarInstructions) throw Error(`${name} has no sidecar.md yet. Write ${path.relative(project, loc.sidecarFile)} with a "## Instructions" section first (or run /lab new ${name}).`);
+  const sidecarExt = carriedExtensions(project).find(t => t.name === 'sidecar');
+  if (!sidecarExt) throw Error('/sidecar was not found (project .pi/extensions, ~/.pi/agent/extensions or its git package), so the lab cannot open the sidecar.');
   const model = o.model || defaultModel();
   if (!model) throw Error('No model given and no default model in your Pi settings. Pass --model provider/id');
   need('hc'); need('herdr-app'); need('pi');
   const work = access(loc.dir) === 'work';
-  const agentModel = o.agentModel || 'fast';
+  const sidecarModel = o.sidecarModel || 'fast';
 
   const id = newLab(project, {
-    kind: 'agent', agent: name, folder: loc.folder, expectations: loc.file, model, agentModel, testerModel: o.testerModel || model,
-    tools: [agentExt], work, jobChars: agentJob.length,
+    kind: 'sidecar', sidecar: name, folder: loc.folder, expectations: loc.file, model, sidecarModel, testerModel: o.testerModel || model,
+    tools: [sidecarExt], work, instructionsChars: sidecarInstructions.length,
   });
   o.onId?.(id);
   // The Tester reads this snapshot (through its tools' code, never a file tool), so edits during a run don't count.
   fs.copyFileSync(loc.file, dirs(id).expectations);
   writeResults(id, { items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })), result: null });
   try {
-    await openLab(id, { behind: o.behind, agentFolder: loc.folder, withheld: [loc.file] }, progress);
+    await openLab(id, { behind: o.behind, sidecarFolder: loc.folder, withheld: [loc.file] }, progress);
     const d = dirs(id), r = readRun(id);
 
     progress('Starting guest Main');
     const mainArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`,
-      need('pi'), '--no-extensions', '-e', agentExt.file, '--tools', MAIN_TOOLS,
+      need('pi'), '--no-extensions', '-e', sidecarExt.file, '--tools', MAIN_TOOLS,
       '--no-skills', '--no-prompt-templates', '--no-themes', '--no-mcp', '--name', 'Main', '--model', model];
     const space = appJson(id, ['do', 'space.new', JSON.stringify({ machine: '', name: `Lab · ${name}`, folder: r.copy, argv: mainArgv })], { timeout: 20000 });
     if (!space?.terminal) throw Error(`Herdr Lab did not confirm guest Main: ${JSON.stringify(space)}`);
@@ -411,20 +411,20 @@ export async function startAgentLab(o = {}, progress = () => {}) {
       await sendLine(id, main, step.text, [main], { quiet: 2 });
     }
 
-    progress(`Opening ${name} with /agent (${agentModel}${work ? ', --work' : ''})`);
+    progress(`Opening ${name} with /sidecar (${sidecarModel}${work ? ', --work' : ''})`);
     const known = new Set(panes(id).map(p => p.terminal));
-    hc(id, ['send', main, agentCommand({ name, work, model: agentModel, job: agentJob })], { timeout: 20000 });
-    const opened = await until(() => panes(id).find(p => !known.has(p.terminal)), 60, `the ${name} pane (look at guest Main for an /agent error)`);
+    hc(id, ['send', main, sidecarCommand({ name, work, model: sidecarModel, instructions: sidecarInstructions })], { timeout: 20000 });
+    const opened = await until(() => panes(id).find(p => !known.has(p.terminal)), 60, `the ${name} pane (look at guest Main for an /sidecar error)`);
     hc(id, ['label', opened.terminal, `lab.pane=${name}`], { check: false });
     writeRun(id, { panes: { Main: main, [name]: opened.terminal } });
     await piReady(id, opened.terminal, 90);
     await settleOn(id, [main, opened.terminal], { quiet: 3, seconds: 120 });
 
-    // hc send must deliver the whole job as one line; the agent's owner entry holds what /agent received.
-    const arrived = ownerJob(sessionFile(d.profile, name));
-    const jobArrived = squash1(arrived || '') === squash1(agentJob);
-    writeRun(id, { phase: 'agent', jobArrived });
-    if (!jobArrived) throw Error(`${name} opened, but its job did not arrive whole (${(arrived || '').length} of ${agentJob.length} characters). Look at guest Main.`);
+    // hc send must deliver the whole instructions as one line; the sidecar's owner entry holds what /sidecar received.
+    const arrived = ownerInstructions(sessionFile(d.profile, name));
+    const instructionsArrived = squash1(arrived || '') === squash1(sidecarInstructions);
+    writeRun(id, { phase: 'sidecar', instructionsArrived });
+    if (!instructionsArrived) throw Error(`${name} opened, but its instructions did not arrive whole (${(arrived || '').length} of ${sidecarInstructions.length} characters). Look at guest Main.`);
 
     if (!fs.existsSync(TESTER)) { progress('The Tester is not built yet; the lab stops here, open for you to look'); return id; }
     progress('Opening the Tester');
@@ -444,10 +444,10 @@ export async function startAgentLab(o = {}, progress = () => {}) {
   } catch (err) { throw await failed(id, o, err); }
 }
 
-/** The job /agent recorded in an agent's owner entry: what actually arrived. */
-export function ownerJob(file) {
+/** The instructions /sidecar recorded in a sidecar's owner entry: what actually arrived. */
+export function ownerInstructions(file) {
   if (!file) return undefined;
-  return readSession(file).findLast(e => e.type === 'custom' && e.customType === MARK.owner)?.data?.job;
+  return readSession(file).findLast(e => e.type === 'custom' && e.customType === MARK.owner)?.data?.instructions;
 }
 
 // ---------- drive ----------
@@ -502,7 +502,7 @@ export const piReady = (id, t, seconds = 60) =>
 
 /**
  * Wait until every listed terminal is idle and its state and turn have not changed for `quiet` seconds
- * (an agent watching Main starts its turn after Main ends). { settled, terminals }.
+ * (a sidecar watching Main starts its turn after Main ends). { settled, terminals }.
  */
 export async function settleOn(id, terminals, { quiet = 4, seconds = 240 } = {}) {
   const end = Date.now() + seconds * 1000;
@@ -534,8 +534,8 @@ export function read(id, name, lines = 40) {
 
 // ---------- transcripts (from the lab profile's Pi sessions) ----------
 
-/** Session entry types written by our /agent extension (agent/fork.ts OWNER, agent/index.ts the rest). */
-export const MARK = { owner: 'agent-identity', watch: 'agent-watch', direct: 'agent-direct', note: 'agent-note', inbox: 'agent-inbox' };
+/** Session entry types written by our /sidecar extension (sidecar/fork.ts OWNER, sidecar/index.ts the rest). */
+export const MARK = { owner: 'sidecar-identity', watch: 'sidecar-watch', direct: 'sidecar-direct', note: 'sidecar-note', inbox: 'sidecar-inbox' };
 
 export const readSession = file => fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return {}; } });
 const sessionName = entries => entries.filter(e => e.type === 'session_info').at(-1)?.name;
@@ -543,15 +543,15 @@ const textOf = m => typeof m.content === 'string' ? m.content : (m.content || []
 const squash1 = s => String(s).replace(/\s+/g, ' ').trim();
 
 /**
- * What a pane showed, from its session entries: prompts, replies and /agent events, as text.
- * For an agent, everything up to and including its owner entry (the forked history, its job, its name)
- * is left out, and so are `system` messages (Pi saves the system prompt, which holds the job). If the
- * job's text still turns up (an agent quoting it), it is replaced, so the Tester never reads it.
+ * What a pane showed, from its session entries: prompts, replies and /sidecar events, as text.
+ * For a sidecar, everything up to and including its owner entry (the forked history, its instructions, its name)
+ * is left out, and so are `system` messages (Pi saves the system prompt, which holds the instructions). If the
+ * instructions's text still turns up (a sidecar quoting it), it is replaced, so the Tester never reads it.
  */
 export function transcriptOf(entries, pane) {
   const ownerAt = entries.findLastIndex(e => e.type === 'custom' && e.customType === MARK.owner);
-  const job = ownerAt >= 0 ? squash1(entries[ownerAt].data?.job || '') : '';
-  const hide = t => job && squash1(t).includes(job) ? squash1(t).split(job).join('(the agent\'s job, withheld)') : t;
+  const instructions = ownerAt >= 0 ? squash1(entries[ownerAt].data?.instructions || '') : '';
+  const hide = t => instructions && squash1(t).includes(instructions) ? squash1(t).split(instructions).join('(the sidecar\'s instructions, withheld)') : t;
   const out = [];
   const add = (e, who, text) => { if (String(text).trim()) out.push({ at: e.timestamp, who, text: hide(String(text).trim()) }); };
   for (const e of entries.slice(ownerAt + 1)) {
@@ -559,10 +559,10 @@ export function transcriptOf(entries, pane) {
       const m = e.message || {};
       if (m.role === 'user') add(e, 'typed', textOf(m));
       else if (m.role === 'assistant') add(e, pane, textOf(m));
-    } else if (e.type === 'custom_message' && e.customType === MARK.watch) add(e, 'lab', '(Main\'s conversation reached this agent)');
-    else if (e.type === 'custom_message' && e.customType === MARK.direct) add(e, 'lab', `(a message sent from Main with /agent send: ${String(e.content).replace(/^Message from the person in Main, sent to you directly:\n/, '')})`);
-    else if (e.type === 'custom' && e.customType === MARK.note) add(e, 'lab', `(a note from ${e.data?.name || 'an agent'} arrived and waits for the next prompt: ${String(e.data?.text || '').slice(0, 300)})`);
-    else if (e.type === 'custom_message' && e.customType === MARK.inbox) { const n = e.details?.ids?.length || 0; add(e, 'lab', `(${n} agent note${n === 1 ? '' : 's'} joined this prompt)`); }
+    } else if (e.type === 'custom_message' && e.customType === MARK.watch) add(e, 'lab', '(Main\'s conversation reached this sidecar)');
+    else if (e.type === 'custom_message' && e.customType === MARK.direct) add(e, 'lab', `(a message sent from Main with /sidecar send: ${String(e.content).replace(/^Message from the person in Main, sent to you directly:\n/, '')})`);
+    else if (e.type === 'custom' && e.customType === MARK.note) add(e, 'lab', `(a note from ${e.data?.name || 'a sidecar'} arrived and waits for the next prompt: ${String(e.data?.text || '').slice(0, 300)})`);
+    else if (e.type === 'custom_message' && e.customType === MARK.inbox) { const n = e.details?.ids?.length || 0; add(e, 'lab', `(${n} sidecar note${n === 1 ? '' : 's'} joined this prompt)`); }
   }
   return out;
 }
@@ -578,7 +578,7 @@ export function sessionFile(profile, pane) {
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
 }
 
-/** What a lab pane (Main, or an agent by name) has shown since it started. Empty if no session has that name. */
+/** What a lab pane (Main, or a sidecar by name) has shown since it started. Empty if no session has that name. */
 export function transcript(id, pane) {
   const f = sessionFile(dirs(id).profile, pane);
   return f ? transcriptOf(readSession(f), pane) : [];
@@ -656,12 +656,12 @@ export async function closePane(id, name) {
   return record(id, `[lab] closed pane ${p.name} · panes now: ${paneList(id)}`);
 }
 
-// ---------- judge: the black-box lab agent ----------
+// ---------- judge: the black-box Tester ----------
 
 const squash = s => String(s).replace(/\s+/g, ' ').trim();
 /**
  * A pass needs a quote the lab itself captured (screen text or a [lab] line); otherwise it becomes a fail.
- * Text the lab agent typed is cut out first: its own typing echoed on screen proves nothing.
+ * Text the Tester typed is cut out first: its own typing echoed on screen proves nothing.
  */
 export function judgeStep(capturedText, steps, p, typed = []) {
   const step = steps.find(s => s.n === p.step);
@@ -674,7 +674,7 @@ export function judgeStep(capturedText, steps, p, typed = []) {
   const found = quote.length >= 3 && seen.includes(quote);
   const onlyTyped = !found && quote.length >= 3 && all.includes(quote);
   let { verdict, got } = p;
-  if (verdict === 'pass' && !found) { verdict = 'fail'; got = `${got} [the lab changed this to fail: ${!quote ? 'no quote given' : onlyTyped ? 'the quote is only text the lab agent typed itself' : 'the quote is not text the lab captured'}]`; }
+  if (verdict === 'pass' && !found) { verdict = 'fail'; got = `${got} [the lab changed this to fail: ${!quote ? 'no quote given' : onlyTyped ? 'the quote is only text the Tester typed itself' : 'the quote is not text the lab captured'}]`; }
   return { n: step.n, text: step.text, tried: p.tried, expected: p.expected, got, verdict, quote: p.quote || '', quoteFound: found };
 }
 
@@ -706,7 +706,7 @@ export function pickScenario(all, sel) {
   throw Error(hits.length ? `"${sel}" matches ${hits.length} scenarios: ${hits.map(s => s.n).join(', ')}` : `"${sel}" matches no scenario`);
 }
 
-/** Run the lab agent as a headless Pi: empty folder, its own profile, only the lab_* tools. */
+/** Run the Tester as a headless Pi: empty folder, its own profile, only the lab_* tools. */
 export function runJudge(id, scenario, seconds = 900) {
   const d = dirs(id), r = readRun(id);
   writeRun(id, { scenario, steps: scenario.steps.map(s => ({ ...s, verdict: null })), phase: 'judging' });
@@ -721,7 +721,7 @@ export function runJudge(id, scenario, seconds = 900) {
     const timer = setTimeout(() => child.kill('SIGTERM'), seconds * 1000);
     const done = problem => { clearTimeout(timer); try { fs.closeSync(log); } catch {} resolve(problem); };
     child.on('error', e => done(e.message));
-    child.on('exit', (code, sig) => done(code === 0 ? undefined : `the lab agent exited ${code ?? sig}`));
+    child.on('exit', (code, sig) => done(code === 0 ? undefined : `the Tester exited ${code ?? sig}`));
   });
 }
 
@@ -753,15 +753,15 @@ export function writeReport(id, extra = {}) {
     '## Steps', '',
     ...steps.flatMap(s => [
       `### ${s.verdict === 'pass' ? '✓' : '✗'} ${s.n}. ${s.text}`, '',
-      s.verdict ? sentence(s) : 'Not reported by the lab agent: counted as failed.',
+      s.verdict ? sentence(s) : 'Not reported by the Tester: counted as failed.',
       ...(s.quote ? ['', `> ${s.quote.replace(/\n/g, '\n> ')}`, '', s.quoteFound ? '_Quote verified against the captured screen text._' : '_Quote NOT found in captured screen text._'] : []), '']),
-    ...(r.summary ? ['## Lab agent summary', '', r.summary, ''] : []),
+    ...(r.summary ? ['## Tester summary', '', r.summary, ''] : []),
     ...(shots.length ? ['## Screenshots', '', ...shots.map(f => `![${path.basename(f)}](${path.basename(f)})`), ''] : []),
     '## Isolation', '',
     `- Herdr Lab window: bundle \`${BUNDLE_ID}\`, app home \`${dirs(id).app}\``,
     `- Core: \`HC_SESSION=${id}\`, socket \`${dirs(id).coreSocket}\`${r.corePid ? `, pid ${r.corePid}` : ''}`,
     `- Pi profile: \`${dirs(id).profile}\` (auth.json linked, nothing else); judge profile \`${dirs(id).judgeProfile}\``,
-    `- Lab agent: \`pi -p --no-extensions --tools ${JUDGE_TOOLS.join(',')} --no-context-files --no-skills --no-mcp --no-session\` in empty folder \`${dirs(id).judgeCwd}\``,
+    `- Tester: \`pi -p --no-extensions --tools ${JUDGE_TOOLS.join(',')} --no-context-files --no-skills --no-mcp --no-session\` in empty folder \`${dirs(id).judgeCwd}\``,
     ...Object.entries(left).filter(([, v]) => v.length).map(([k, v]) => `- Left out (${k}): ${v.slice(0, 20).map(f => `\`${f}\``).join(', ')}${v.length > 20 ? ` and ${v.length - 20} more` : ''}`), '',
     '## Everything the lab captured', '', '```text', captured(id).trim(), '```', '',
   ];
@@ -787,7 +787,7 @@ export async function stopLab(id) {
   const d = dirs(id), r = readRun(id);
   if (!r) throw Error(`No lab ${id}. \`lab list\` shows labs on this computer.`);
   const done = [];
-  if (r.judgePid && alive(r.judgePid)) { process.kill(r.judgePid, 'SIGTERM'); done.push(`lab agent (pid ${r.judgePid}) ended`); }
+  if (r.judgePid && alive(r.judgePid)) { process.kill(r.judgePid, 'SIGTERM'); done.push(`Tester (pid ${r.judgePid}) ended`); }
   if (coreUp(id)) {
     const ts = hcJson(id, ['ls'], { check: false })?.terminals || [];
     for (const t of ts) hc(id, ['kill', t.address], { check: false });
@@ -813,7 +813,7 @@ export async function stopLab(id) {
   fs.rmSync(d.sock, { recursive: true, force: true });
   fs.rmSync(d.root, { recursive: true, force: true });
   done.push(`deleted ${d.root} (project copy, Pi profiles, logs, screenshots) and ${d.sock}`);
-  return { id, done, left: leftovers(id, { window: pid, core: r.corePid, 'lab agent': r.judgePid }) };
+  return { id, done, left: leftovers(id, { window: pid, core: r.corePid, 'Tester': r.judgePid }) };
 }
 
 const labMarkers = id => [`${path.join(LAB_HOME, id)}/`, `${path.join(SOCK_ROOT, id)}/`];
@@ -844,7 +844,7 @@ export function leftovers(id, pids = {}) {
     const m = l.match(/^(\d+)\s+(.*)$/);
     return m && !self.has(Number(m[1])) && !m[2].startsWith('/bin/ps') && markers.some(k => m[2].includes(k));
   });
-  // The pids this lab recorded (window, core, lab agent): any still alive is a leftover.
+  // The pids this lab recorded (window, core, Tester): any still alive is a leftover.
   for (const [what, pid] of Object.entries(pids)) if (pid && alive(pid) && !procs.some(l => l.startsWith(`${pid} `))) procs.push(`${pid} (${what})`);
   const files = id ? [dirs(id).root, dirs(id).sock].filter(p => fs.existsSync(p)) : [];
   const otherLabs = list().filter(l => l.id !== id).map(l => `${l.id} (core ${l.core}, window ${l.window})`);
@@ -878,7 +878,7 @@ export function doctor(project = process.cwd()) {
   add('harness', 'pi', () => exec(need('pi'), ['--version']).trim());
   add('harness', 'model logins', () => { if (!fs.existsSync(path.join(DAILY_PI, 'auth.json'))) throw Error(`no auth.json in ${DAILY_PI}; run /login in Pi`); return `${path.join(DAILY_PI, 'auth.json')} (linked, never copied)`; });
   add('harness', 'default model', () => { const m = defaultModel(); if (!m) throw Error('none: set LAB_MODEL or a Pi default, or pass --model provider/id'); return `${m} (${process.env.LAB_MODEL ? 'LAB_MODEL' : 'your Pi default; set LAB_MODEL for a cheaper lab model'})`; });
-  // Like herdr-pi-lab: say whether /split and /agent were found. A missing one is a note, not a failure.
+  // Like herdr-pi-lab: say whether /split and /sidecar were found. A missing one is a note, not a failure.
   let carried = [];
   add('harness', 'extensions that carry over', () => { carried = carriedExtensions(project); return carried.length ? carried.map(t => `/${t.name}`).join(', ') : 'none'; });
   for (const name of CARRIED) add('harness', `/${name}`, () => { const t = carried.find(x => x.name === name); if (!t) throw Error('not found; scenarios that use it will fail'); return t.file; }, true);

@@ -1,4 +1,4 @@
-// Expectations: agents/<name>/expectations.md, a plain Markdown file a person reads and edits.
+// Expectations: sidecars/<name>/expectations.md, a plain Markdown file a person reads and edits.
 // Parsing, the lab's own See/Absent checks and quote matching are deterministic; only Expect and
 // Never lines need the Tester's judgment. Adapted from herdr-pi-lab's expectations.mjs (0.5.0).
 import fs from 'node:fs';
@@ -8,17 +8,17 @@ export const KINDS = ['do', 'run', 'expect', 'never', 'see', 'absent'];
 const BEFORE = /^(before|setup)$/i;
 export const NAME = /^[a-z][a-z0-9_-]{0,31}$/i;
 
-export const FORMAT = `# <Agent> expectations
+export const FORMAT = `# <Sidecar> expectations
 
 ## Before
 Run: <optional: a shell command the lab runs in the project copy first, e.g. to plant a bug>
-Do (Main): <optional: a prompt Main gets before the agent opens>
+Do (Main): <optional: a prompt Main gets before the sidecar opens>
 
 ## <Expectation title>
 Do (Main): <what to type in Main>
-Do (Agent): <only when the check is about typing in the agent's own pane, e.g. /agent send main #1>
-Expect (Agent): <what must happen, judged from the screen>
-Never (Agent): <what must not happen>
+Do (Sidecar): <only when the check is about typing in the sidecar's own pane, e.g. /sidecar send main #1>
+Expect (Sidecar): <what must happen, judged from the screen>
+Never (Sidecar): <what must not happen>
 See (Main): "<exact text that must appear>"
 Absent (Main): "<exact text that must not appear>"`;
 
@@ -26,9 +26,9 @@ const unquote = text => { const t = text.trim(), m = t.match(/^["“'‘](.*)["�
 
 /**
  * Parse expectations Markdown into { title, before: [line], items: [{ id, title, lines: [line] }] },
- * where line = { kind, pane, text, line }. "(Agent)" means the agent under test. Throws with a line number.
+ * where line = { kind, pane, text, line }. "(Sidecar)" means the sidecar under test. Throws with a line number.
  */
-export function parse(markdown, agent = 'Agent') {
+export function parse(markdown, sidecar = 'Sidecar') {
   const out = { title: '', before: [], items: [] };
   let section = null, n = 0;
   for (const raw of String(markdown).split(/\r?\n/)) {
@@ -50,12 +50,12 @@ export function parse(markdown, agent = 'Agent') {
       // An indented line continues the line above it.
       if (section?.lines.length && /^\s/.test(raw)) { section.lines.at(-1).text += ' ' + line.trim(); continue; }
       if (!section) continue; // prose before the first heading is commentary
-      throw Error(`Line ${n}: start with Do, Run, Expect, Never, See or Absent, e.g. "Expect (${agent}): asks which homes it covers".`);
+      throw Error(`Line ${n}: start with Do, Run, Expect, Never, See or Absent, e.g. "Expect (${sidecar}): asks which homes it covers".`);
     }
     if (!section) throw Error(`Line ${n}: put "${m[1]}" under a "## Title" heading.`);
     const kind = m[1].toLowerCase();
-    let pane = (m[2] || (kind === 'do' ? 'Main' : 'Agent')).trim();
-    if (/^agent$/i.test(pane) || pane.toLowerCase() === agent.toLowerCase()) pane = agent;
+    let pane = (m[2] || (kind === 'do' ? 'Main' : 'Sidecar')).trim();
+    if (/^sidecar$/i.test(pane) || pane.toLowerCase() === sidecar.toLowerCase()) pane = sidecar;
     else if (/^main$/i.test(pane)) pane = 'Main';
     // Any other pane name is kept; the lab notes it (extraPanes) and does not open it, like herdr-pi-lab.
     if (section.setup && kind !== 'do' && kind !== 'run') throw Error(`Line ${n}: the Before section only holds Do and Run lines.`);
@@ -74,10 +74,10 @@ export const judged = item => item.lines.filter(l => l.kind === 'expect' || l.ki
 export const observed = item => item.lines.filter(l => l.kind === 'see' || l.kind === 'absent');
 export const steps = item => item.lines.filter(l => l.kind === 'do');
 
-/** Panes named in the file other than Main and the agent: the lab does not open them, it says so. */
-export function extraPanes(spec, agent) {
+/** Panes named in the file other than Main and the sidecar: the lab does not open them, it says so. */
+export function extraPanes(spec, sidecar) {
   const all = new Set([...spec.before, ...spec.items.flatMap(i => i.lines)].map(l => l.pane));
-  for (const p of ['Main', agent, 'lab']) all.delete(p);
+  for (const p of ['Main', sidecar, 'lab']) all.delete(p);
   return [...all];
 }
 
@@ -89,12 +89,12 @@ export function contains(screen, quote) {
 }
 
 /**
- * Screen text with everything up to the end of the agent's job cut off. A history read reaches the top
- * of a pane, where the job is shown (the agent's first message; the /agent line typed in Main), and the
- * Tester must not read it. Matches on the job's last words, so a job whose start is out of range is cut too.
+ * Screen text with everything up to the end of the sidecar's instructions cut off. A history read reaches the top
+ * of a pane, where the instructions are shown (the sidecar's first message; the /sidecar line typed in Main), and the
+ * Tester must not read it. Matches on the instructions's last words, so instructions whose start is out of range is cut too.
  */
-export function belowJob(text, job) {
-  const tail = fold(job).slice(-40);
+export function belowInstructions(text, instructions) {
+  const tail = fold(instructions).slice(-40);
   if (tail.length < 12) return String(text);
   const lines = String(text).split('\n'), ends = [];
   let folded = '';
@@ -104,44 +104,44 @@ export function belowJob(text, job) {
   return lines.slice(ends.findIndex(e => e >= at + tail.length) + 1).join('\n');
 }
 
-/** agents/<name>/: its folder, its expectations file and its agent.md. */
+/** sidecars/<name>/: its folder, its expectations file and its sidecar.md. */
 export function locate(project, name) {
-  if (!NAME.test(String(name || ''))) throw Error(`"${name}" is not an agent name. Use one word, such as Critic (a letter first, up to 32 characters).`);
-  const dir = path.join(project, 'agents', name.toLowerCase());
+  if (!NAME.test(String(name || ''))) throw Error(`"${name}" is not a sidecar name. Use one word, such as Critic (a letter first, up to 32 characters).`);
+  const dir = path.join(project, 'sidecars', name.toLowerCase());
   const file = path.join(dir, 'expectations.md');
-  return { dir, file, agentFile: path.join(dir, 'agent.md'), folder: `agents/${name.toLowerCase()}`, missing: !fs.existsSync(file) };
+  return { dir, file, sidecarFile: path.join(dir, 'sidecar.md'), folder: `sidecars/${name.toLowerCase()}`, missing: !fs.existsSync(file) };
 }
 
 /**
- * The agent's job: the "## Job" section of agent.md, whitespace collapsed. Without a "## Job" heading,
- * the whole file minus its title (herdr-pi-lab). undefined when there is no agent.md.
+ * The sidecar's instructions: the "## Instructions" section of sidecar.md, whitespace collapsed. Without a "## Instructions" heading,
+ * the whole file minus its title (herdr-pi-lab). undefined when there is no sidecar.md.
  */
-export function job(dir) {
-  const file = path.join(dir, 'agent.md');
+export function instructions(dir) {
+  const file = path.join(dir, 'sidecar.md');
   if (!fs.existsSync(file)) return undefined;
   const text = fs.readFileSync(file, 'utf8');
-  const m = /^##[ \t]+Job[ \t]*\r?\n([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(text);
-  const shown = `agents/${path.basename(dir)}/agent.md`;
+  const m = /^##[ \t]+Instructions[ \t]*\r?\n([\s\S]*?)(?=^##[ \t]|(?![\s\S]))/m.exec(text);
+  const shown = `sidecars/${path.basename(dir)}/sidecar.md`;
   const body = (m ? m[1] : text.replace(/^#.*$/m, '')).replace(/\s+/g, ' ').trim();
-  if (!body) throw Error(`${shown} needs a "## Job" section: one paragraph telling the agent what to do.`);
-  if (body.length > 2400) throw Error(`${shown}: the Job section is ${body.length.toLocaleString('en-US')} characters; /agent accepts up to 2,400.`);
+  if (!body) throw Error(`${shown} needs a "## Instructions" section: one paragraph telling the sidecar what to do.`);
+  if (body.length > 2400) throw Error(`${shown}: the Instructions section is ${body.length.toLocaleString('en-US')} characters; /sidecar accepts up to 2,400.`);
   return body;
 }
 
-/** "Access: work" on its own line in agent.md: the agent changes files or runs commands, so it opens with /agent --work. */
+/** "Access: work" on its own line in sidecar.md: the sidecar changes files or runs commands, so it opens with /sidecar --work. */
 export function access(dir) {
-  const file = path.join(dir, 'agent.md');
+  const file = path.join(dir, 'sidecar.md');
   return fs.existsSync(file) && /^Access:[ \t]*work\b/im.test(fs.readFileSync(file, 'utf8')) ? 'work' : 'read';
 }
 
 /**
  * What `lab test …` means: a scenarios file (the default lab-scenarios.md, or a file named first),
- * one agent by name (a single word that is not a file: agents/<name>/), or a scenario in plain words.
+ * one sidecar by name (a single word that is not a file: sidecars/<name>/), or a scenario in plain words.
  */
 export function testTarget(args, isFile) {
   const [first, ...rest] = args;
   if (!first || isFile(first)) return { kind: 'scenarios', file: first, pick: rest.join(' ') || undefined };
-  if (args.length === 1 && NAME.test(first)) return { kind: 'agent', name: first };
+  if (args.length === 1 && NAME.test(first)) return { kind: 'sidecar', name: first };
   return { kind: 'words', text: args.join('\n') };
 }
 

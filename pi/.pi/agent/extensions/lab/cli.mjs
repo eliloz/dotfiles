@@ -6,15 +6,15 @@ import * as core from './core.mjs';
 import { help } from './help.mjs';
 import { testTarget } from './expectations.mjs';
 import { headline, runsSummary } from './report.mjs';
-import { projectAgents, latestReport } from './agents.mjs';
+import { projectSidecars, latestReport } from './sidecars.mjs';
 
 function parse(argv) {
   const o = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--with' || a.startsWith('--with=')) throw Error('--with is gone: /split and /agent carry over into the lab by themselves; add others with LAB_EXTENSIONS=path:path');
+    if (a === '--with' || a.startsWith('--with=')) throw Error('--with is gone: /split and /sidecar carry over into the lab by themselves; add others with LAB_EXTENSIONS=path:path');
     else if (a === '--model') o.model = argv[++i];
-    else if (a === '--agent-model') o.agentModel = argv[++i];
+    else if (a === '--sidecar-model') o.sidecarModel = argv[++i];
     else if (a === '--tester-model') o.testerModel = argv[++i];
     else if (a === '--run') o.run = argv[++i];
     else if (a === '--seconds') o.seconds = Number(argv[++i]);
@@ -35,7 +35,7 @@ for (const s of [process.stdout, process.stderr]) s.on('error', () => {});
 
 /**
  * Ctrl-C (SIGINT), a closed terminal (SIGHUP) or Pi quitting (SIGTERM) during run/start stops the lab
- * this command started. With --keep only the lab agent is ended and the lab stays open.
+ * this command started. With --keep only the Tester is ended and the lab stays open.
  */
 let signalId, signalKeep = false;
 function stopOnSignal(o) {
@@ -52,7 +52,7 @@ function stopOnSignal(o) {
     try {
       if (signalKeep && r.phase !== 'starting') {
         if (r.judgePid) try { process.kill(r.judgePid, 'SIGTERM'); } catch {}
-        console.error(`lab: ${sig}: ended the lab agent; ${id} is still open (--keep). Close it with: lab stop ${id}`);
+        console.error(`lab: ${sig}: ended the Tester; ${id} is still open (--keep). Close it with: lab stop ${id}`);
       } else {
         console.error(`lab: ${sig}: stopping ${id}`);
         console.error(await stopText(id));
@@ -91,12 +91,12 @@ const isFile = f => { try { return fs.statSync(f).isFile(); } catch { return fal
  */
 async function testCmd(o) {
   const t = testTarget(o._, isFile);
-  if (o.runs && t.kind !== 'agent') throw Error('--runs is for an agent: lab test <Agent> --runs N');
-  if (t.kind === 'agent') return o.runs > 1 ? agentRuns(o, t.name) : (await agentCmd(o, t.name)).code;
+  if (o.runs && t.kind !== 'sidecar') throw Error('--runs is for a sidecar: lab test <Sidecar> --runs N');
+  if (t.kind === 'sidecar') return o.runs > 1 ? sidecarRuns(o, t.name) : (await sidecarCmd(o, t.name)).code;
   let file, scenarios;
   if (t.kind === 'scenarios') {
     file = t.file || DEFAULT_FILE;
-    if (!isFile(file)) throw Error(`No ${DEFAULT_FILE} here. Give a file (lab test FILE 1), an agent (lab test critic) or the steps in words (lab test "Open a pane. Run ls.")`);
+    if (!isFile(file)) throw Error(`No ${DEFAULT_FILE} here. Give a file (lab test FILE 1), a sidecar (lab test critic) or the steps in words (lab test "Open a pane. Run ls.")`);
     scenarios = core.pickScenario(core.parseScenarios(fs.readFileSync(file, 'utf8')), t.pick);
   } else scenarios = core.pickScenario(core.parseScenarios(t.text));
   if (scenarios.length > 1) progress(`${scenarios.length} scenarios from ${file}, one lab each`);
@@ -109,28 +109,28 @@ async function testCmd(o) {
 }
 
 /**
- * lab test <Agent>: open the agent's lab (Main, Before, /agent, then the Tester). It stays open for you to look.
+ * lab test <Sidecar>: open the sidecar's lab (Main, Before, /sidecar, then the Tester). It stays open for you to look.
  * With --wait: block until the Tester has written its report, print the verdicts, then stop the lab (--keep: leave it open).
  * Returns { code, res }: the exit code and the run's results.
  */
-async function agentCmd(o, name) {
+async function sidecarCmd(o, name) {
   const onSignal = stopOnSignal(o.wait ? o : {}); // Ctrl-C while it opens (or waits) stops the lab
   // "· run <id>" lets /lab in Pi follow the run (widget, result message) while the lab is still opening.
   const onId = lab => { onSignal(lab); progress(`run ${lab}`); };
-  const id = await core.startAgentLab({ name, model: o.model, agentModel: o.agentModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
+  const id = await core.startSidecarLab({ name, model: o.model, sidecarModel: o.sidecarModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
   const r = core.readRun(id);
-  console.log([`Lab ${id} for ${r.agent}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
+  console.log([`Lab ${id} for ${r.sidecar}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
     `Panes: ${core.panes(id).map(p => `${p.name} (${p.terminal})`).join(', ')}`,
-    `Models: Main ${r.model} · ${r.agent} ${r.agentModel} · Tester ${r.testerModel}`,
-    `${r.agent}'s job arrived whole: ${r.jobArrived ? 'yes' : 'no'} (${r.jobChars} characters)`,
+    `Models: Main ${r.model} · ${r.sidecar} ${r.sidecarModel} · Tester ${r.testerModel}`,
+    `${r.sidecar}'s instructions arrived whole: ${r.instructionsArrived ? 'yes' : 'no'} (${r.instructionsChars} characters)`,
     ...(o.wait ? [] : [`Close it with: lab stop ${id}`])].join('\n'));
   if (!o.wait || r.phase !== 'testing') return { code: 0 };
   const res = await waitForTester(id, o.seconds || 900);
   if (interrupted) await interrupted;
   if (!core.readRun(id)) { console.log(`${id} was stopped during the run, so there is no report.`); return { code: 2 }; }
   const lines = res?.report
-    ? [`${r.agent}: ${headline(res)}`, ...res.items.map(i => `${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}${i.reason ? `\n     ${i.reason}` : ''}`), `Report: ${res.report}`]
-    : [`${r.agent}: unfinished · the Tester did not call lab_finish within ${o.seconds || 900} s`];
+    ? [`${r.sidecar}: ${headline(res)}`, ...res.items.map(i => `${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}${i.reason ? `\n     ${i.reason}` : ''}`), `Report: ${res.report}`]
+    : [`${r.sidecar}: unfinished · the Tester did not call lab_finish within ${o.seconds || 900} s`];
   if (o.keep) lines.push(`The lab is still open (--keep). Close it with: lab stop ${id}`);
   else lines.push(await stopText(id));
   console.log(lines.join('\n') + '\n');
@@ -138,16 +138,16 @@ async function agentCmd(o, name) {
 }
 
 /**
- * lab test <Agent> --runs N: the same test N times, one lab after another, each stopped when it ends.
- * One pass says little about an agent on a small model; this prints how often each expectation passed.
+ * lab test <Sidecar> --runs N: the same test N times, one lab after another, each stopped when it ends.
+ * One pass says little about a sidecar on a small model; this prints how often each expectation passed.
  * Exit 0 only when every run passed; 2 when a run could not finish.
  */
-async function agentRuns(o, name) {
+async function sidecarRuns(o, name) {
   if (o.keep) throw Error('--runs stops each lab before the next one opens, so it cannot be used with --keep');
   const runs = [];
   for (let n = 1; n <= o.runs; n++) {
     progress(`Run ${n} of ${o.runs}`);
-    runs.push(await agentCmd({ ...o, wait: true }, name));
+    runs.push(await sidecarCmd({ ...o, wait: true }, name));
     if (runs.at(-1).code === 2 && !runs.at(-1).res?.items) break; // the lab itself could not run: more runs would not help
   }
   console.log(runsSummary(name, runs, o.runs));
@@ -171,18 +171,18 @@ async function runScenario(o, scenario, withheld) {
   progress(`Carried into the lab's Pi panes: ${carried || 'no extensions'}`);
   const left = Object.entries(core.readRun(id).copied?.left || {}).filter(([k, v]) => k !== 'git' && v.length);
   if (left.length) progress(`Left out of the copy: ${left.map(([k, v]) => `${k} ${v.length}`).join(', ')} (names in the report)`);
-  progress(`Lab ${id} is up; the lab agent is running (${core.readRun(id).model})`);
+  progress(`Lab ${id} is up; the Tester is running (${core.readRun(id).model})`);
   const problem = await core.runJudge(id, scenario, o.seconds || 900);
   if (interrupted) await interrupted;
   if (!core.readRun(id)) {
     console.log(`${scenario.title}: unfinished · ${id} was stopped during the run (lab stop), so there is no report.`);
     return 2;
   }
-  const rep = core.writeReport(id, { error: core.readRun(id).phase === 'judged' ? undefined : problem || 'the lab agent did not call lab_finish' });
+  const rep = core.writeReport(id, { error: core.readRun(id).phase === 'judged' ? undefined : problem || 'the Tester did not call lab_finish' });
   const r = core.readRun(id);
   const lines = [`${scenario.title}: ${rep.result} · ${rep.passed} of ${rep.total} steps`,
     ...r.steps.map(s => `${s.verdict === 'pass' ? '✓' : '✗'} ${s.n}. ${s.verdict ? core.sentence(s) : `${s.text}: not reported`}${s.quote ? `\n     “${s.quote.replace(/\s+/g, ' ').slice(0, 200)}”` : ''}`)];
-  if (rep.result === 'unfinished') lines.push(`Lab agent problem: ${problem}. Log: ${path.join(core.dirs(id).logs, 'judge.log')}${o.keep ? '' : ' (deleted with the lab; rerun with --keep to keep it)'}`);
+  if (rep.result === 'unfinished') lines.push(`Tester problem: ${problem}. Log: ${path.join(core.dirs(id).logs, 'judge.log')}${o.keep ? '' : ' (deleted with the lab; rerun with --keep to keep it)'}`);
   lines.push(`Report: ${rep.report}`);
   if (o.keep) lines.push(`The lab is still open (--keep). Close it with: lab stop ${id}`);
   else if (core.readRun(id)) { const st = await stopText(id); core.appendToReport(rep.report, `\n## Stop\n\n\`\`\`text\n${st}\n\`\`\`\n`); lines.push(st); }
@@ -217,14 +217,14 @@ async function main(argv) {
       for (const id of ids) console.log(await stopText(id));
       return 0;
     }
-    case 'agents': { const a = projectAgents(process.cwd()); console.log(o.json ? JSON.stringify(a) : a.length ? a.join('\n') : 'No agents with expectations here (agents/<name>/expectations.md).'); return 0; }
+    case 'sidecars': { const a = projectSidecars(process.cwd()); console.log(o.json ? JSON.stringify(a) : a.length ? a.join('\n') : 'No sidecars with expectations here (sidecars/<name>/expectations.md).'); return 0; }
     case 'report': {
-      const name = o._[0]; if (!name) throw Error('lab report <Agent>');
+      const name = o._[0]; if (!name) throw Error('lab report <Sidecar>');
       const f = latestReport(process.cwd(), name);
       if (!f) { console.log(`No reports for ${name} yet. Run: lab test ${name}`); return 1; }
       console.log(o.json ? JSON.stringify({ report: f }) : `${fs.readFileSync(f, 'utf8').trimEnd()}\n\n${f}`); return 0;
     }
-    case 'new': throw Error('lab new runs inside Pi: it interviews you in the conversation. Type /lab new <Agent> there.');
+    case 'new': throw Error('lab new runs inside Pi: it interviews you in the conversation. Type /lab new <Sidecar> there.');
     case 'leftovers': { const l = core.leftovers(o._[0]); console.log(o.json ? JSON.stringify(l, null, 2) : leftoverText(l)); return 0; }
     case 'clean': console.log(core.clean()); return 0;
     default: throw Error(`Unknown command "${cmd}". Run lab --help`);

@@ -1,7 +1,7 @@
 /**
  * The lab's black-box Tester. It runs in its own Pi pane, started with only these tools
  * (`--no-extensions -e tester/index.ts --tools lab_do,…`, no context files, no session), so it cannot read
- * files, run a shell or open the agent's instructions: it can only have the lab type the expectations'
+ * files, run a shell or open the sidecar's instructions: it can only have the lab type the expectations'
  * steps, read the guest panes' screens and record verdicts. Adapted from herdr-pi-lab's tester (0.5.0).
  *
  * Ours differs on one point (lesson, build guide line 403: "judge … from quoted screen text … reject any
@@ -16,7 +16,7 @@ import fs from "node:fs";
 // @ts-ignore: plain ESM shared with the `lab` shell command
 import * as core from "../core.mjs";
 // @ts-ignore
-import { parse, steps, decide, contains, belowJob } from "../expectations.mjs";
+import { parse, steps, decide, contains, belowInstructions } from "../expectations.mjs";
 // @ts-ignore
 import { writeReport, headline } from "../report.mjs";
 
@@ -43,7 +43,7 @@ export default function (pi: ExtensionAPI) {
 	const load = () => {
 		const id = runId(), run = core.readRun(id), results = core.readResults(id);
 		if (!run || !results) throw Error("This lab run is gone.");
-		const spec = parse(fs.readFileSync(core.dirs(id).expectations, "utf8"), run.agent);
+		const spec = parse(fs.readFileSync(core.dirs(id).expectations, "utf8"), run.sidecar);
 		return { id, run, results, spec };
 	};
 	const guests = (run: any): [string, string][] => Object.entries(run.panes || {}).filter(([k]) => k !== "Tester") as [string, string][];
@@ -65,7 +65,7 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const { run, results } = load();
 			const c = core.tally(results);
-			const head = results.result ? `Lab · ${run.agent} · ${headline(results)}` : `Lab · ${run.agent} · ${c.pass + c.fail}/${c.total} checked`;
+			const head = results.result ? `Lab · ${run.sidecar} · ${headline(results)}` : `Lab · ${run.sidecar} · ${c.pass + c.fail}/${c.total} checked`;
 			ui.ui.setWidget("lab-tester", [head, ...results.items.map((i: any) => `${MARK[i.verdict || (i.running ? "running" : "pending")]} ${i.id} · ${i.title}`)]);
 		} catch {}
 	}
@@ -74,7 +74,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_do",
 		label: "Lab · do",
-		description: "Run the Do lines of one expectation exactly as written (typed into the named guest pane), wait until Main and the agent are quiet, and return the lines to check and the end of every guest screen.",
+		description: "Run the Do lines of one expectation exactly as written (typed into the named guest pane), wait until Main and the sidecar are quiet, and return the lines to check and the end of every guest screen.",
 		parameters: Type.Object({ expectation: Type.Integer({ minimum: 1 }) }),
 		renderResult,
 		async execute(_c, p) {
@@ -108,17 +108,17 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_look",
 		label: "Lab · look",
-		description: "Read the end of a guest pane's screen now (Main or the agent). With lines above 40 (up to 200) it also reads the pane's history above the screen, for a reply whose start has scrolled off.",
+		description: "Read the end of a guest pane's screen now (Main or the sidecar). With lines above 40 (up to 200) it also reads the pane's history above the screen, for a reply whose start has scrolled off.",
 		parameters: Type.Object({ pane: Type.String(), lines: Type.Optional(Type.Integer({ minimum: 5, maximum: 200 })) }),
 		renderResult,
 		async execute(_c, p) {
 			const { id, run, results } = load();
 			const pane = paneOf(run, p.pane);
 			const want = p.lines || SCREEN_LINES, full = core.screen(id, pane.terminal);
-			// History reaches the top of the pane, where the job is shown: cut it off. `saw` stays the visible
+			// History reaches the top of the pane, where the instructions are shown: cut it off. `saw` stays the visible
 			// screen, so See/Absent never match a reply to an earlier expectation.
-			const job = want > SCREEN_LINES ? core.ownerJob(core.sessionFile(core.dirs(id).profile, run.agent)) || "" : "";
-			const shown = core.lastLines(want > SCREEN_LINES ? belowJob(core.screen(id, pane.terminal, want), job) : full, want);
+			const instructions = want > SCREEN_LINES ? core.ownerInstructions(core.sessionFile(core.dirs(id).profile, run.sidecar)) || "" : "";
+			const shown = core.lastLines(want > SCREEN_LINES ? belowInstructions(core.screen(id, pane.terminal, want), instructions) : full, want);
 			const rec = current(results);
 			if (rec) { add(rec.saw ??= {}, pane.name, full); add(rec.given ??= {}, pane.name, shown); save(id, results); }
 			return text(`--- ${pane.name}: end of ${want > SCREEN_LINES ? "history and screen" : "screen"} ---\n${shown || "(blank)"}`, `read ${pane.name}`);
@@ -173,7 +173,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_finish",
 		label: "Lab · finish",
-		description: "After every expectation has a verdict: write the report into the agent's reports folder, save a screenshot of this window, and hand the result to the person.",
+		description: "After every expectation has a verdict: write the report into the sidecar's reports folder, save a screenshot of this window, and hand the result to the person.",
 		parameters: Type.Object({ summary: Type.String({ minLength: 1, maxLength: 800 }) }),
 		renderResult,
 		async execute(_c, p) {

@@ -1,16 +1,16 @@
 /**
- * /lab and the `lab` tool: grow and test agents, and run checks, in a private Herdr Lab window.
+ * /lab and the `lab` tool: grow and test sidecars, and run scenarios, in a private Herdr Lab window.
  * Modelled on herdr-pi-lab (0.5.0).
  *
  * Starting and stopping labs goes through cli.mjs (also the `lab` shell command), so Pi and a shell run the
  * same code. Following a run (widget, result message, `wait`) reads the lab's own files through core.mjs.
  *
- *   /lab new <Agent> [job]   sends new-agent.md into this conversation: interview, expectations (your OK),
- *                            agent.md, then the lab through the `lab` tool
- *   /lab test <Agent>        returns at once; a checklist widget follows the run and the result arrives
+ *   /lab new <Sidecar> [instructions]   sends new-sidecar.md into this conversation: interview, expectations (your OK),
+ *                            sidecar.md, then the lab through the `lab` tool
+ *   /lab test <Sidecar>        returns at once; a checklist widget follows the run and the result arrives
  *                            as a message here. The lab stays open; /lab stop closes it
- *   /lab report <Agent>      the latest report
- *   /lab test FILE [N]       a check from lab-scenarios.md (unchanged)
+ *   /lab report <Sidecar>      the latest report
+ *   /lab test FILE [N]       a scenario from lab-scenarios.md
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { realpathSync, readFileSync, statSync } from "node:fs";
@@ -28,14 +28,14 @@ import { FORMAT, NAME, testTarget } from "./expectations.mjs";
 // @ts-ignore
 import { headline } from "./report.mjs";
 // @ts-ignore
-import { latestReport, newAgentBrief, projectAgents, reportExcerpt } from "./agents.mjs";
+import { latestReport, newSidecarBrief, projectSidecars, reportExcerpt } from "./sidecars.mjs";
 
 const CLI = path.join(path.dirname(realpathSync(fileURLToPath(import.meta.url))), "cli.mjs");
 const MSG = "lab-result";
 const NEW = "lab-new";
 const WIDGET = "lab";
 const MARK: Record<string, string> = { pass: "✓", fail: "✗", running: "◐", pending: "○" };
-const VALUE_FLAGS = new Set(["--model", "--agent-model", "--tester-model", "--seconds", "--run", "--runs"]);
+const VALUE_FLAGS = new Set(["--model", "--sidecar-model", "--tester-model", "--seconds", "--run", "--runs"]);
 
 /** Shell-like split: "quoted words" stay one argument. */
 export function tokenize(s: string): string[] {
@@ -75,7 +75,7 @@ const runIdOf = (line: string) => /^run (lab-[0-9a-f]{6})$/.exec(line)?.[1];
 
 /** The finished run as Markdown: headline, one line per expectation, the report path. */
 function resultMessage(project: string, r: any, s: any) {
-	return [`**Lab · ${r.agent}: ${headline(s)}**`, "",
+	return [`**Lab · ${r.sidecar}: ${headline(s)}**`, "",
 		...s.items.map((i: any) => `${MARK[i.verdict] ?? "○"} ${i.id} · ${i.title}${i.verdict === "fail" && i.reason ? ` — ${i.reason}` : ""}`), "",
 		`Report: \`${path.relative(project, s.report)}\``, "The lab is still open for you to look. `/lab stop` closes it."].join("\n");
 }
@@ -112,9 +112,9 @@ export default function (pi: ExtensionAPI) {
 			return { invalidate() { md.invalidate(); }, render(w: number) { return [truncateToWidth(" ".repeat(pad) + head, w), ...md.render(w)]; } };
 		}
 		return { invalidate() {}, render(width: number) {
-			const job = d.job ? wrapTextWithAnsi(theme.fg("muted", `“${d.job}”`), Math.max(1, width - pad * 2)) : [];
-			const steps = theme.fg("dim", (d.kept ? "" : "interview → expectations (your OK) → ") + "agent.md → lab → report   (ctrl+o: full brief)");
-			return [head, ...job, steps].map((l: string) => truncateToWidth(" ".repeat(pad) + l, width));
+			const instructions = d.instructions ? wrapTextWithAnsi(theme.fg("muted", `“${d.instructions}”`), Math.max(1, width - pad * 2)) : [];
+			const steps = theme.fg("dim", (d.kept ? "" : "interview → expectations (your OK) → ") + "sidecar.md → lab → report   (ctrl+o: full brief)");
+			return [head, ...instructions, steps].map((l: string) => truncateToWidth(" ".repeat(pad) + l, width));
 		} };
 	});
 
@@ -123,7 +123,7 @@ export default function (pi: ExtensionAPI) {
 	const setWidget = (lines?: string[]) => { try { if (ui?.hasUI) ui.ui.setWidget(WIDGET, lines); } catch {} };
 
 	/**
-	 * Follow an agent lab: the checklist in a widget; when the Tester has written its report, the result as a
+	 * Follow a sidecar lab: the checklist in a widget; when the Tester has written its report, the result as a
 	 * message (only for runs started with /lab test: a run the model started is reported through `wait`).
 	 */
 	function watch(id: string, project: string, announce: boolean, step = () => "") {
@@ -132,7 +132,7 @@ export default function (pi: ExtensionAPI) {
 			const r = core.readRun(id), s = core.readResults(id);
 			if (!r || r.phase === "failed") { clearInterval(t); watching.delete(id); setWidget(undefined); return; }
 			const c = core.tally(s);
-			const head = s?.report ? `Lab · ${r.agent} · ${headline(s)}` : r.phase === "testing" ? `Lab · ${r.agent} · Tester checking ${c.pass + c.fail}/${c.total}` : `Lab · ${r.agent} · ${step() || r.phase}`;
+			const head = s?.report ? `Lab · ${r.sidecar} · ${headline(s)}` : r.phase === "testing" ? `Lab · ${r.sidecar} · Tester checking ${c.pass + c.fail}/${c.total}` : `Lab · ${r.sidecar} · ${step() || r.phase}`;
 			setWidget([head, ...(s?.items || []).map((i: any) => `  ${MARK[i.verdict || (i.running ? "running" : "pending")]} ${i.id} · ${i.title}`)]);
 			if (s?.report) {
 				clearInterval(t); watching.delete(id);
@@ -146,14 +146,14 @@ export default function (pi: ExtensionAPI) {
 		tick();
 	}
 
-	/** cli.mjs `test <Agent>`: opens the lab up to the Tester and exits. Pi passes this conversation's model unless LAB_MODEL or --model says otherwise. */
-	function agentArgs(name: string, flags: string[], ctx: ExtensionContext) {
+	/** cli.mjs `test <Sidecar>`: opens the lab up to the Tester and exits. Pi passes this conversation's model unless LAB_MODEL or --model says otherwise. */
+	function sidecarArgs(name: string, flags: string[], ctx: ExtensionContext) {
 		const argv = ["test", name, ...flags];
 		if (!argv.includes("--model") && !process.env.LAB_MODEL && ctx.model) argv.push("--model", `${ctx.model.provider}/${ctx.model.id}`);
 		return argv;
 	}
 
-	async function startAgent(argv: string[], ctx: ExtensionContext, announce: boolean, onLine: (l: string) => void = () => {}, onSpawn?: (c: ChildProcess) => void) {
+	async function startSidecar(argv: string[], ctx: ExtensionContext, announce: boolean, onLine: (l: string) => void = () => {}, onSpawn?: (c: ChildProcess) => void) {
 		let id: string | undefined, last = "";
 		const r = await runCli(argv, ctx.cwd, (l) => {
 			const hit = runIdOf(l);
@@ -165,8 +165,8 @@ export default function (pi: ExtensionAPI) {
 
 	pi.registerCommand("lab", {
 		// pi 1.5.2 drops argumentHint for extension commands, so the hint leads the description.
-		description: `${ARG_HINT}  Herdr Lab: grow and test agents in a private window`,
-		getArgumentCompletions: (prefix: string) => completions(prefix, () => (ui ? projectAgents(ui.cwd) : [])),
+		description: `${ARG_HINT}  Herdr Lab: grow and test sidecars in a private window`,
+		getArgumentCompletions: (prefix: string) => completions(prefix, () => (ui ? projectSidecars(ui.cwd) : [])),
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			ui = ctx;
 			const argv = tokenize(args.trim());
@@ -176,18 +176,18 @@ export default function (pi: ExtensionAPI) {
 
 				if (cmd === "new") {
 					const name = argv[1];
-					if (!name || !NAME.test(name)) throw Error("Name the agent in one word, e.g. /lab new Critic [what it should do]");
+					if (!name || !NAME.test(name)) throw Error("Name the sidecar in one word, e.g. /lab new Critic [what it should do]");
 					if (!ctx.isIdle()) throw Error("Wait for this turn to finish, then run /lab new again.");
-					const jobText = argv.slice(2).join(" ") || undefined;
-					const kept = projectAgents(ctx.cwd).some((a: string) => a.toLowerCase() === name.toLowerCase());
+					const instructionsText = argv.slice(2).join(" ") || undefined;
+					const kept = projectSidecars(ctx.cwd).some((a: string) => a.toLowerCase() === name.toLowerCase());
 					const Name = name.charAt(0).toUpperCase() + name.slice(1);
-					pi.sendMessage({ customType: NEW, content: newAgentBrief(ctx.cwd, name, jobText), display: true, details: { name: Name, job: jobText, kept } }, { triggerTurn: true });
+					pi.sendMessage({ customType: NEW, content: newSidecarBrief(ctx.cwd, name, instructionsText), display: true, details: { name: Name, instructions: instructionsText, kept } }, { triggerTurn: true });
 					return;
 				}
 
 				if (cmd === "report") {
 					const name = argv[1];
-					if (!name) throw Error("Which agent? e.g. /lab report Critic");
+					if (!name) throw Error("Which sidecar? e.g. /lab report Critic");
 					const f = latestReport(ctx.cwd, name);
 					if (!f) return ctx.ui.notify(`No reports for ${name} yet. Run /lab test ${name}.`, "warning");
 					say(`${reportExcerpt(readFileSync(f, "utf8"))}\n\nFull report: \`${path.relative(ctx.cwd, f)}\``);
@@ -195,25 +195,25 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				if (cmd === "list") {
-					const agents = projectAgents(ctx.cwd);
+					const sidecars = projectSidecars(ctx.cwd);
 					const labs = core.list().map((l: any) => {
 						const r = core.readRun(l.id) || {}, s = core.readResults(l.id);
-						const what = r.kind === "agent" ? `${r.agent}: ${s?.report ? headline(s) : l.phase}` : l.phase;
+						const what = r.kind === "sidecar" ? `${r.sidecar}: ${s?.report ? headline(s) : l.phase}` : l.phase;
 						return `${l.id}  ${l.core === "running" ? "open" : "stopped"}  ${what}  ${l.project ?? ""}`;
 					});
-					return ctx.ui.notify([`Agents with expectations here: ${agents.join(", ") || "none yet (try /lab new Critic)"}`,
+					return ctx.ui.notify([`Sidecars with expectations here: ${sidecars.join(", ") || "none yet (try /lab new Critic)"}`,
 						labs.length ? "Labs on this computer:" : "No labs on this computer.", ...labs].join("\n"), "info");
 				}
 
 				if (cmd === "test" || cmd === "run" || cmd === "start") {
-					if (argv.includes("--runs")) return ctx.ui.notify("--runs waits for every run, so it belongs in a shell: lab test <Agent> --runs 3", "warning");
+					if (argv.includes("--runs")) return ctx.ui.notify("--runs waits for every run, so it belongs in a shell: lab test <Sidecar> --runs 3", "warning");
 					if (starting) return ctx.ui.notify("A lab from this conversation is still opening; wait, or /lab stop", "warning");
 					const target = cmd === "start" ? undefined : testTarget(positionals(argv.slice(1)), isFileIn(ctx.cwd));
 					starting = true;
-					if (target?.kind === "agent") {
+					if (target?.kind === "sidecar") {
 						// Returns once the Tester is running; the widget follows the run and the result arrives as a message.
 						ctx.ui.notify(`Opening a lab for ${target.name.charAt(0).toUpperCase() + target.name.slice(1)}. The widget follows it; the result arrives here.`, "info");
-						startAgent(agentArgs(target.name, argv.slice(2), ctx), ctx, true)
+						startSidecar(sidecarArgs(target.name, argv.slice(2), ctx), ctx, true)
 							.then(({ id, code, text }) => {
 								if (code !== 0) { setWidget(undefined); ctx.ui.notify(text || `lab exited ${code}`, "error"); }
 								else if (!id) ctx.ui.notify(text, "info");
@@ -228,7 +228,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 
-				if (!["doctor", "stop", "leftovers", "agents"].includes(cmd)) throw Error(`Unknown command "${cmd}". Run /lab --help`);
+				if (!["doctor", "stop", "leftovers", "sidecars"].includes(cmd)) throw Error(`Unknown command "${cmd}". Run /lab --help`);
 				const r = await runCli(argv, ctx.cwd, () => {});
 				if (cmd === "stop") { for (const t of watching.values()) clearInterval(t); watching.clear(); setWidget(undefined); }
 				ctx.ui.notify(resultText(r), r.code === 0 ? "info" : "error");
@@ -246,44 +246,44 @@ export default function (pi: ExtensionAPI) {
 		name: "lab",
 		label: "Herdr Lab",
 		description:
-			'Black-box test an agent, or run a check, in a private Herdr Lab window with a copy of this project. ' +
-			'Agents: test {agent, model?, agentModel?, testerModel?, behind?} opens the lab (guest Main, the agent via /agent with only its Job, a black-box Tester) and returns a run ID once the Tester runs; a start is not a result: then call wait {run, seconds?} (default 600) until it returns finished, with every verdict and its screen quotes and the report path. status {run}; report {agent} (latest report); agents (agents here with expectations). Expectations live in agents/<agent>/expectations.md (format in help). ' +
-			'Checks: when asked to "use the lab" to run a check, call check {file?, check?, say?, behind?, model?}: from lab-scenarios.md (check: a number, "first", or words such as "/split"; none runs them all) or in plain words (say); it waits and returns every step as "I tried X, expected Y, got Z" with ✓ or ✗ and a quote, then closes the lab. ' +
+			'Black-box test a sidecar, or run a scenario, in a private Herdr Lab window with a copy of this project. ' +
+			'Sidecars: test {sidecar, model?, sidecarModel?, testerModel?, behind?} opens the lab (guest Main, the sidecar via /sidecar with only its Instructions, a black-box Tester) and returns a run ID once the Tester runs; a start is not a result: then call wait {run, seconds?} (default 600) until it returns finished, with every verdict and its screen quotes and the report path. status {run}; report {sidecar} (latest report); sidecars (sidecars here with expectations). Expectations live in sidecars/<sidecar>/expectations.md (format in help). ' +
+			'Scenarios: when asked to "use the lab" to run a scenario (or a "check" from lab-scenarios.md), call scenario {file?, pick?, say?, behind?, model?}: from lab-scenarios.md (pick: a number, "first", or words such as "/split"; none runs them all) or in plain words (say); it waits and returns every step as "I tried X, expected Y, got Z" with ✓ or ✗ and a quote, then closes the lab. ' +
 			"Report results to the person as they came back; never restate a failure as a pass. Other actions: help; doctor; list (labs on this computer); stop {run?} (default the latest).",
 		parameters: Type.Object({
-			action: Type.Union(["test", "wait", "status", "report", "agents", "check", "doctor", "list", "stop", "help"].map((v) => Type.Literal(v))),
-			agent: Type.Optional(Type.String({ description: "For test and report: the agent's name, as in agents/<name>/." })),
+			action: Type.Union(["test", "wait", "status", "report", "sidecars", "scenario", "doctor", "list", "stop", "help"].map((v) => Type.Literal(v))),
+			sidecar: Type.Optional(Type.String({ description: "For test and report: the sidecar's name, as in sidecars/<name>/." })),
 			run: Type.Optional(Type.String({ description: "For wait, status and stop: the lab ID (lab-xxxxxx); stop also takes all." })),
 			seconds: Type.Optional(Type.Integer({ minimum: 5, maximum: 1800, description: "For wait: how long to wait before returning (default 600)." })),
-			model: Type.Optional(Type.String({ description: "provider/id for guest Main, the Tester and a check's lab agent. Default: LAB_MODEL, else this conversation's model." })),
-			agentModel: Type.Optional(Type.String({ description: "For test: the agent's model. Default: fast." })),
+			model: Type.Optional(Type.String({ description: "provider/id for guest Main, the Tester and a scenario's Tester. Default: LAB_MODEL, else this conversation's model." })),
+			sidecarModel: Type.Optional(Type.String({ description: "For test: the sidecar's model. Default: fast." })),
 			testerModel: Type.Optional(Type.String({ description: "For test: the Tester's model. Default: model." })),
 			behind: Type.Optional(Type.Boolean({ description: "Open the lab window behind the person's windows." })),
-			file: Type.Optional(Type.String({ description: "For check: the scenarios file; default lab-scenarios.md." })),
-			check: Type.Optional(Type.String({ description: 'For check: a number, "first", or words from it such as "/split". None runs them all.' })),
-			say: Type.Optional(Type.String({ description: "For check: the steps in plain words, instead of a file." })),
+			file: Type.Optional(Type.String({ description: "For scenario: the scenarios file; default lab-scenarios.md." })),
+			pick: Type.Optional(Type.String({ description: 'For scenario: a number, "first", or words from it such as "/split". None runs them all.' })),
+			say: Type.Optional(Type.String({ description: "For scenario: the steps in plain words, instead of a file." })),
 		}),
 		async execute(_id, p, signal, onUpdate, ctx) {
 			ui = ctx;
 			switch (p.action) {
 				case "help": return text(`${help("/lab")}\n\nExpectations format:\n${FORMAT}`);
-				case "agents": return json({ agents: projectAgents(ctx.cwd) });
+				case "sidecars": return json({ sidecars: projectSidecars(ctx.cwd) });
 				case "report": {
-					if (!p.agent) throw Error("report needs agent.");
-					const f = latestReport(ctx.cwd, p.agent);
-					return text(f ? `${readFileSync(f, "utf8")}\n\n(${path.relative(ctx.cwd, f)})` : `No reports for ${p.agent} yet.`);
+					if (!p.sidecar) throw Error("report needs sidecar.");
+					const f = latestReport(ctx.cwd, p.sidecar);
+					return text(f ? `${readFileSync(f, "utf8")}\n\n(${path.relative(ctx.cwd, f)})` : `No reports for ${p.sidecar} yet.`);
 				}
 				case "test": {
-					if (!p.agent) throw Error("test needs agent.");
-					const flags = [...(p.model ? ["--model", p.model] : []), ...(p.agentModel ? ["--agent-model", p.agentModel] : []),
+					if (!p.sidecar) throw Error("test needs sidecar.");
+					const flags = [...(p.model ? ["--model", p.model] : []), ...(p.sidecarModel ? ["--sidecar-model", p.sidecarModel] : []),
 						...(p.testerModel ? ["--tester-model", p.testerModel] : []), ...(p.behind ? ["--behind"] : [])];
 					let child: ChildProcess | undefined;
 					const abort = () => child?.kill("SIGTERM"); // cli.mjs stops the lab it was opening
 					signal?.addEventListener("abort", abort, { once: true });
 					try {
-						const { id, code, text: t } = await startAgent(agentArgs(p.agent, flags, ctx), ctx, false, (l) => onUpdate?.(text(`lab · ${l}`)), (c) => { child = c; });
+						const { id, code, text: t } = await startSidecar(sidecarArgs(p.sidecar, flags, ctx), ctx, false, (l) => onUpdate?.(text(`lab · ${l}`)), (c) => { child = c; });
 						if (code !== 0 || !id) throw Error(t || `lab exited ${code}`);
-						return json({ started: true, run: id, agent: core.readRun(id)?.agent, next: `wait {"run":"${id}"}` }, `Lab ${id} open; the Tester is running`);
+						return json({ started: true, run: id, sidecar: core.readRun(id)?.sidecar, next: `wait {"run":"${id}"}` }, `Lab ${id} open; the Tester is running`);
 					} finally { signal?.removeEventListener("abort", abort); }
 				}
 				case "status": {
@@ -311,9 +311,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			// The rest goes through cli.mjs, as /lab does.
 			let argv: string[];
-			if (p.action === "check") {
-				if (p.say && (p.file || p.check)) throw new Error("Give say, or file/check, not both.");
-				argv = ["test", ...(p.say ? [p.say] : [p.file || "lab-scenarios.md", ...(p.check ? [p.check] : [])])];
+			if (p.action === "scenario") {
+				if (p.say && (p.file || p.pick)) throw new Error("Give say, or file/pick, not both.");
+				argv = ["test", ...(p.say ? [p.say] : [p.file || "lab-scenarios.md", ...(p.pick ? [p.pick] : [])])];
 				if (p.behind) argv.push("--behind");
 				if (p.model) argv.push("--model", p.model);
 			} else argv = p.action === "stop" ? ["stop", ...(p.run ? [p.run] : [])] : [p.action];
@@ -323,7 +323,7 @@ export default function (pi: ExtensionAPI) {
 			try {
 				const r = await runCli(argv, ctx.cwd, (l) => onUpdate?.(text(`lab · ${l}`)), (c) => { child = c; track(c); });
 				const t = resultText(r);
-				if (r.code === 2 && p.action === "check" && !/steps/.test(r.out)) throw new Error(t || `lab exited ${r.code}`);
+				if (r.code === 2 && p.action === "scenario" && !/steps/.test(r.out)) throw new Error(t || `lab exited ${r.code}`);
 				if (p.action === "stop") { for (const w of watching.values()) clearInterval(w); watching.clear(); setWidget(undefined); }
 				return text(t || `lab exited ${r.code}`);
 			} finally {

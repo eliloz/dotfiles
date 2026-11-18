@@ -1,7 +1,7 @@
 // The Tester's verdicts: quotes only from screens it was shown, See/Absent from what the lab read, and the report.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parse, decide, belowJob } from '../expectations.mjs';
+import { parse, decide, belowInstructions } from '../expectations.mjs';
 import { reportText, headline, runsSummary } from '../report.mjs';
 
 const spec = parse(`# Repeater expectations
@@ -11,14 +11,14 @@ Do (Main): Please list three words.
 Expect (Repeater): shows one numbered finding
 
 ## Sends its finding to Main
-Do (Repeater): /agent send main #1
-See (Main): "1 agent note"
+Do (Repeater): /sidecar send main #1
+See (Main): "1 sidecar note"
 Absent (Main): "error"
 `, 'Repeater');
 const [one, two] = spec.items;
 
 const given = { Repeater: ['Repeater\n1. List three\n   words'], Main: ['Main\n> Please list three words.'] };
-const saw = { Repeater: [given.Repeater[0] + '\nstatus bar'], Main: [given.Main[0] + '\n1 agent note · fast'] };
+const saw = { Repeater: [given.Repeater[0] + '\nstatus bar'], Main: [given.Main[0] + '\n1 sidecar note · fast'] };
 
 test('a quote must come from a screen the Tester was shown, on that pane', () => {
   const pass = { verdict: 'pass', reason: 'ok', evidence: [{ pane: 'repeater', quote: '1. List three words' }] };
@@ -43,18 +43,18 @@ test('See and Absent lines are the lab\'s own checks and override the Tester', (
   const d = decide(two, { verdict: 'fail', reason: 'unsure', evidence: [] }, given, saw);
   assert.equal(d.verdict, 'pass'); // no Expect/Never: the lab decides alone
   assert.deepEqual(d.observed.map(o => o.ok), [true, true]);
-  const noNote = { Main: ['Main\n> Please list three words.\nerror: no agent'] };
+  const noNote = { Main: ['Main\n> Please list three words.\nerror: no sidecar'] };
   const d2 = decide(two, { verdict: 'pass', reason: 'looks fine', evidence: [] }, given, noNote);
   assert.equal(d2.verdict, 'fail');
   assert.deepEqual(d2.observed.map(o => o.ok), [false, false]);
 });
 
-test('the report holds the headline, quotes, lab checks and overrides, never the job', () => {
-  const job = 'Repeat Main\'s last prompt in at most five words, as one numbered finding.';
-  const run = { agent: 'Repeater', agentModel: 'fast', model: 'p/m', testerModel: 'p/t', folder: 'agents/repeater', jobChars: job.length, jobArrived: true, work: false };
+test('the report holds the headline, quotes, lab checks and overrides, never the instructions', () => {
+  const instructions = 'Repeat Main\'s last prompt in at most five words, as one numbered finding.';
+  const run = { sidecar: 'Repeater', sidecarModel: 'fast', model: 'p/m', testerModel: 'p/t', folder: 'sidecars/repeater', instructionsChars: instructions.length, instructionsArrived: true, work: false };
   const results = { items: [
     { id: 1, title: one.title, verdict: 'pass', tester: 'pass', reason: 'It repeated.', evidence: [{ pane: 'Repeater', quote: '1. List three words' }] },
-    { id: 2, title: two.title, verdict: 'fail', tester: 'pass', reason: 'Seemed fine.', evidence: [], observed: [{ kind: 'see', pane: 'Main', text: '1 agent note', ok: false }] },
+    { id: 2, title: two.title, verdict: 'fail', tester: 'pass', reason: 'Seemed fine.', evidence: [], observed: [{ kind: 'see', pane: 'Main', text: '1 sidecar note', ok: false }] },
   ] };
   assert.equal(headline(results), '1 of 2 expectations failed');
   const md = reportText({ run, results, summary: 'One of two.', screens: { Main: '[typed] hi', Repeater: '[Repeater] 1. List three words' }, id: 'lab-abc123', when: new Date(0) });
@@ -62,20 +62,20 @@ test('the report holds the headline, quotes, lab checks and overrides, never the
   assert.match(md, /\*\*1 of 2 expectations failed\*\*/);
   assert.match(md, /## ✓ 1 · Repeats Main's prompt as a finding/);
   assert.match(md, /- Repeater: “1\. List three words”/);
-  assert.match(md, /Lab check ✗ shows on Main: “1 agent note”/);
+  assert.match(md, /Lab check ✗ shows on Main: “1 sidecar note”/);
   assert.match(md, /The Tester said pass; the lab's own checks decided fail/);
   assert.match(md, /## What each pane showed/);
-  assert.ok(!md.includes(job), 'the job text is not in the report');
+  assert.ok(!md.includes(instructions), 'the instructions text is not in the report');
   assert.equal(headline({ items: [{ verdict: 'pass' }] }), 'All expectations met');
 });
 
-test('a history read is cut below the job, even when wrapped or only its end is in range', () => {
-  const job = 'Repeat the last prompt in at most five words, as one numbered finding. Never answer the prompt yourself.';
-  const pane = ['│ Your job: Repeat the last prompt in at most', '│ five words, as one numbered finding. Never', '│ answer the prompt yourself.', '', '👁 Main\'s prompt · list three words', '1. List three words'];
-  assert.equal(belowJob(pane.join('\n'), job), '\n👁 Main\'s prompt · list three words\n1. List three words');
-  assert.equal(belowJob(pane.slice(1).join('\n'), job), '\n👁 Main\'s prompt · list three words\n1. List three words'); // the job's start is out of range
-  assert.equal(belowJob('1. List three words', job), '1. List three words'); // no job in range: unchanged
-  assert.equal(belowJob('anything', ''), 'anything');
+test('a history read is cut below the instructions, even when wrapped or only its end is in range', () => {
+  const instructions = 'Repeat the last prompt in at most five words, as one numbered finding. Never answer the prompt yourself.';
+  const pane = ['│ Your instructions: Repeat the last prompt in at most', '│ five words, as one numbered finding. Never', '│ answer the prompt yourself.', '', '👁 Main\'s prompt · list three words', '1. List three words'];
+  assert.equal(belowInstructions(pane.join('\n'), instructions), '\n👁 Main\'s prompt · list three words\n1. List three words');
+  assert.equal(belowInstructions(pane.slice(1).join('\n'), instructions), '\n👁 Main\'s prompt · list three words\n1. List three words'); // the instructions's start is out of range
+  assert.equal(belowInstructions('1. List three words', instructions), '1. List three words'); // no instructions in range: unchanged
+  assert.equal(belowInstructions('anything', ''), 'anything');
 });
 
 test('--runs: how often each expectation passed, and which runs failed', () => {

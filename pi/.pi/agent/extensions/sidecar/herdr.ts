@@ -8,7 +8,7 @@ type Exec = ExtensionAPI["exec"];
 const TIMEOUT_MS = 15_000;
 
 export const NEEDS_HERDR =
-	"/agent opens its pane with Herdr. Run Pi inside a Herdr app pane (hc and herdr-app on PATH), then try again. /agent --help works anywhere.";
+	"/sidecar opens its pane with Herdr. Run Pi inside a Herdr app pane (hc and herdr-app on PATH), then try again. /sidecar --help works anywhere.";
 
 async function run(exec: Exec, cmd: string, args: string[], cwd: string): Promise<string> {
 	let r: Awaited<ReturnType<Exec>>;
@@ -51,7 +51,7 @@ export async function openPane(exec: Exec, cwd: string, pane: string, command: s
 	const before = await json(exec, "herdr-app", ["status"], cwd).catch(() => undefined);
 	const vars = Object.entries(env).map(([k, v]) => `${k}=${v}`);
 	// pane.split has no folder argument: cd first, then exec. $1 is the folder, the rest is argv.
-	const argv = ["/bin/sh", "-c", 'cd "$1" && shift && exec "$@"', "agent", cwd, "/usr/bin/env", ...vars, ...command];
+	const argv = ["/bin/sh", "-c", 'cd "$1" && shift && exec "$@"', "sidecar", cwd, "/usr/bin/env", ...vars, ...command];
 	const out = await json(exec, "herdr-app", ["do", "pane.split", JSON.stringify({ pane, direction: "right", argv })], cwd);
 	if (typeof out?.pane !== "string" || !out.pane || out.pane === pane) throw new Error(`Herdr did not report a new pane: ${JSON.stringify(out).slice(0, 200)}`);
 	if (before?.focused_pane === pane) {

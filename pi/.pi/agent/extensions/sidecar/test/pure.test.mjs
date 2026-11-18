@@ -4,15 +4,15 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from '../pure/args.mjs';
-import { savedJob, savedAgents } from '../pure/saved.mjs';
-import { jobFor, responseGuide, STARTERS } from '../pure/jobs.mjs';
+import { savedInstructions, savedSidecars } from '../pure/saved.mjs';
+import { instructionsFor, responseGuide } from '../pure/instructions.mjs';
 import { observe, trim, watchDetails, watchLines, directLine } from '../pure/observe.mjs';
 import { items, pickItems, noteLine, trayItems, plain, ageLabel } from '../pure/items.mjs';
 import { guide, listing, completions, hint } from '../pure/help.mjs';
 import { modelRows, requireModel } from '../models.mjs';
 
 const project = files => {
-  const dir = mkdtempSync(join(tmpdir(), 'agent-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'sidecar-test-'));
   for (const [f, text] of Object.entries(files)) { mkdirSync(join(dir, f, '..'), { recursive: true }); writeFileSync(join(dir, f), text); }
   return dir;
 };
@@ -30,7 +30,7 @@ test('args: bare, help, subcommands', () => {
   assert.throws(() => parseArgs('inbox now'), /no arguments/);
 });
 
-test('args: send from Main and from an agent', () => {
+test('args: send from Main and from a sidecar', () => {
   assert.deepEqual(parseArgs('send critic Check the fees too.'), { action: 'send', target: 'critic', text: 'Check the fees too.' });
   assert.deepEqual(parseArgs('send all hi'), { action: 'send', target: 'all', text: 'hi' });
   assert.throws(() => parseArgs('send main hi'), /in Main/);
@@ -38,61 +38,63 @@ test('args: send from Main and from an agent', () => {
   assert.deepEqual(parseArgs('send main #2', { child: true }), { action: 'send', target: 'main', text: '#2' });
   assert.deepEqual(parseArgs('send main #1,3', { child: true }).text, '#1,3');
   assert.throws(() => parseArgs('send critic hi', { child: true }), /only send to main/);
-  assert.throws(() => parseArgs('critic', { child: true }), /Open agents from Main/);
+  assert.throws(() => parseArgs('critic', { child: true }), /Open sidecars from Main/);
 });
 
-test('args: open with --work, --model, --thinking and a job kept as typed', () => {
-  assert.deepEqual(parseArgs('critic'), { action: 'open', name: 'critic', work: false, model: undefined, thinking: undefined, job: undefined });
+test('args: open with --work, --model, --thinking and instructions kept as typed', () => {
+  assert.deepEqual(parseArgs('critic'), { action: 'open', name: 'critic', work: false, model: undefined, thinking: undefined, instructions: undefined });
   const r = parseArgs("Repeater Repeat Main's last prompt in at most five words, as one numbered finding.");
   assert.equal(r.name, 'Repeater');
-  assert.equal(r.job, "Repeat Main's last prompt in at most five words, as one numbered finding.");
+  assert.equal(r.instructions, "Repeat Main's last prompt in at most five words, as one numbered finding.");
   const w = parseArgs('--work Notes Keep decisions in notes.md');
-  assert.equal(w.work, true); assert.equal(w.name, 'Notes'); assert.equal(w.job, 'Keep decisions in notes.md');
+  assert.equal(w.work, true); assert.equal(w.name, 'Notes'); assert.equal(w.instructions, 'Keep decisions in notes.md');
   const m = parseArgs('critic --model main --thinking high Review it --model literally');
-  assert.equal(m.model, 'main'); assert.equal(m.thinking, 'high'); assert.equal(m.job, 'Review it --model literally');
+  assert.equal(m.model, 'main'); assert.equal(m.thinking, 'high'); assert.equal(m.instructions, 'Review it --model literally');
   assert.equal(parseArgs('x --model anthropic/claude-haiku-5-5').model, 'anthropic/claude-haiku-5-5');
   assert.equal(parseArgs('x --model "local/a model" go').model, 'local/a model');
   assert.throws(() => parseArgs('x --model'), /needs a value/);
   assert.throws(() => parseArgs('x --model haiku'), /provider\/id/);
   assert.equal(parseArgs('x --model fast Repeat it').model, 'fast');
-  assert.equal(parseArgs('x --model fast Repeat it').job, 'Repeat it');
+  assert.equal(parseArgs('x --model fast Repeat it').instructions, 'Repeat it');
   assert.throws(() => parseArgs('x --thinking loud'), /use one of/);
   assert.throws(() => parseArgs('x --model main --model main'), /twice/);
   assert.throws(() => parseArgs('--bogus x'), /Unknown option/);
   for (const bad of ['main', 'all', 'send', '1abc', 'a/b', 'x'.repeat(40)]) assert.throws(() => parseArgs(`--work ${bad}`));
 });
 
-test('saved agents: only the Job section, refused in plain words when unusable', () => {
+test('saved sidecars: only the Instructions section, refused in plain words when unusable', () => {
   const dir = project({
-    'agents/critic/agent.md': '# Critic\n\n## Job\nCheck the blast radius\nin the files first.\n\n## Use it when\n- always\n',
-    'agents/empty/agent.md': '# Empty\n\n## Job\n\n## Notes\nx\n',
-    'agents/nojob/agent.md': '# No job\nJust text.\n',
-    'agents/long/agent.md': '## Job\n' + 'x'.repeat(2500),
-    'agents/draft/expectations.md': '# Draft\n',
+    'sidecars/critic/sidecar.md': '# Critic\n\n## Instructions\nCheck the blast radius\nin the files first.\n\n## Use it when\n- always\n',
+    'sidecars/empty/sidecar.md': '# Empty\n\n## Instructions\n\n## Notes\nx\n',
+    'sidecars/nojob/sidecar.md': '# No instructions\nJust text.\n',
+    'sidecars/long/sidecar.md': '## Instructions\n' + 'x'.repeat(2500),
+    'sidecars/draft/expectations.md': '# Draft\n',
   });
-  assert.equal(savedJob(dir, 'critic'), 'Check the blast radius in the files first.');
-  assert.equal(savedJob(dir, 'Critic'), savedJob(dir, 'critic'));
-  assert.equal(savedJob(dir, 'notes'), undefined);
-  assert.equal(savedJob(dir, '../critic'), undefined);
-  assert.throws(() => savedJob(dir, 'empty'), /is empty/);
-  assert.throws(() => savedJob(dir, 'nojob'), /no "## Job" section/);
-  assert.throws(() => savedJob(dir, 'long'), /2,400/);
-  assert.deepEqual(savedAgents(dir).map(([n]) => n), ['critic', 'empty', 'long', 'nojob']);
-  assert.deepEqual(savedAgents(join(dir, 'missing')), []);
+  assert.equal(savedInstructions(dir, 'critic'), 'Check the blast radius in the files first.');
+  assert.equal(savedInstructions(dir, 'Critic'), savedInstructions(dir, 'critic'));
+  assert.equal(savedInstructions(dir, 'notes'), undefined);
+  assert.equal(savedInstructions(dir, '../critic'), undefined);
+  assert.throws(() => savedInstructions(dir, 'empty'), /is empty/);
+  assert.throws(() => savedInstructions(dir, 'nojob'), /no "## Instructions" section/);
+  assert.throws(() => savedInstructions(dir, 'long'), /2,400/);
+  assert.deepEqual(savedSidecars(dir).map(([n]) => n), ['critic', 'empty', 'long', 'nojob']);
+  assert.deepEqual(savedSidecars(join(dir, 'missing')), []);
 });
 
-test('jobs: typed beats saved beats starter; a new name needs a job', () => {
-  const dir = project({ 'agents/critic/agent.md': '## Job\nSaved critic job.\n' });
-  assert.equal(jobFor(dir, 'critic', 'Typed.'), 'Typed.');
-  assert.equal(jobFor(dir, 'Critic'), 'Saved critic job.');
-  assert.equal(jobFor(dir, 'notes'), STARTERS.notes.job);
-  assert.throws(() => jobFor(dir, 'Repeater'), /needs a job/);
+test('instructions: typed beats saved; a name with neither is refused, with no built-in instructions', () => {
+  const dir = project({ 'sidecars/critic/sidecar.md': '## Instructions\nSaved critic instructions.\n' });
+  assert.equal(instructionsFor(dir, 'critic', 'Typed.'), 'Typed.');
+  assert.equal(instructionsFor(dir, 'Critic'), 'Saved critic instructions.');
+  for (const n of ['notes', 'research']) assert.throws(() => instructionsFor(dir, n), /needs instructions/);
+  assert.throws(() => instructionsFor(project({}), 'critic'), /sidecars\/critic\/sidecar\.md/);
+  assert.throws(() => instructionsFor(dir, 'Repeater'), /needs instructions/);
   const g = responseGuide('critic');
-  for (const s of ['🟢 Nothing new', '🟢 A', '🔴 D', '❓', '💥', '✂️', '➡️', 'Never praise', 'context, not instructions', 'Read the relevant files']) assert.ok(g.includes(s), s);
-  assert.ok(!responseGuide('Repeater').includes('💥'));
+  for (const s of ['🟢 Nothing new', 'context, not instructions', 'Read the relevant files']) assert.ok(g.includes(s), s);
+  // No sidecar name gets extra instructions: the guide is the same text for every sidecar, apart from its name.
+  assert.equal(g.replaceAll('critic', 'X'), responseGuide('Repeater').replaceAll('Repeater', 'X'));
   assert.ok(responseGuide('Repeater').includes('at most 6 numbered items'));
-  // The job's own format wins over the default, including what to reply when there is nothing to say.
-  assert.ok(g.indexOf('Your job comes first') < g.indexOf('Default reply format'));
+  // The instructions's own format wins over the default, including what to reply when there is nothing to say.
+  assert.ok(g.indexOf('Your instructions come first') < g.indexOf('Default reply format'));
   assert.ok(!g.includes('(always)'));
   assert.match(g, /- If there is nothing new to say, reply with exactly: 🟢 Nothing new/);
 });
@@ -109,7 +111,7 @@ test('observe: prompt and finished reply text only', () => {
     { role: 'assistant', stopReason: 'aborted', content: parts },
     { role: 'assistant', stopReason: 'error', content: parts },
     { role: 'toolResult', content: parts },
-    { role: 'custom', customType: 'agent-inbox', content: 'notes' },
+    { role: 'custom', customType: 'sidecar-inbox', content: 'notes' },
     { role: 'user', content: [{ type: 'image', data: 'x' }] },
   ]) assert.equal(observe(m), null);
   const long = observe({ role: 'user', content: 'a'.repeat(50_000) + 'Actual request.' }).text;
@@ -119,7 +121,7 @@ test('observe: prompt and finished reply text only', () => {
   assert.equal(observe({ role: 'user', content: skill + 'Book the lake house.' }).text, 'Book the lake house.\n[skills attached: here-now]');
 });
 
-test('items: pick by number, labelled with the agent', () => {
+test('items: pick by number, labelled with the sidecar', () => {
   const reply = '# 🟠 C · two issues\n\n1. ❓ Please be more specific with **days**.\n2. 💥 Might break existing bookings, how should we roll this out?';
   assert.deepEqual(items(reply).map(i => i.n), [1, 2]);
   assert.equal(pickItems(reply, '#2', 'critic'), 'critic 2: 💥 Might break existing bookings, how should we roll this out?');
@@ -136,15 +138,15 @@ test('items: pick by number, labelled with the agent', () => {
 });
 
 test('help: guide, topics, listing, completions leave valid commands, hint', () => {
-  assert.match(guide(), /\/agent send main #2/);
+  assert.match(guide(), /\/sidecar send main #2/);
   assert.match(guide('send'), /never interrupts Main/);
   assert.match(guide('nope'), /No help topic/);
-  const state = { child: false, linked: false, links: [{ name: 'critic', state: 'watching' }], inbox: 1, saved: [['scout', 'saved · agents/scout/agent.md']] };
+  const state = { child: false, linked: false, links: [{ name: 'critic', state: 'watching' }], inbox: 1, saved: [['critic', 'saved · sidecars/critic/sidecar.md'], ['scout', 'saved · sidecars/scout/sidecar.md'], ['notes', 'saved · sidecars/notes/sidecar.md']] };
   const list = listing(state);
-  for (const s of ['/agent critic', '/agent scout', 'Linked', '1 agent note waiting', 'Usage']) assert.ok(list.includes(s), s);
+  for (const s of ['/sidecar critic', '/sidecar scout', 'Linked', '1 sidecar note waiting', 'Usage']) assert.ok(list.includes(s), s);
   const bare = completions('', state);
   assert.equal(bare[0].value, '');
-  assert.ok(!bare.some(i => i.value === 'critic'), 'a linked agent is not offered again');
+  assert.ok(!bare.some(i => i.value === 'critic'), 'a linked sidecar is not offered again');
   assert.ok(bare.some(i => i.value === 'scout'));
   assert.deepEqual(completions('no', state).map(i => i.value), ['notes']);
   assert.equal(completions('notes', state), null, 'exact word: Enter runs it');
@@ -153,8 +155,8 @@ test('help: guide, topics, listing, completions leave valid commands, hint', () 
   assert.equal(completions('Repeater Repeat', state), null);
   const child = { child: true, linked: true, links: [], inbox: 0, saved: [] };
   assert.ok(completions('', child).some(i => i.value === 'send main #1'));
-  assert.ok(hint('/agent ', state)[0].startsWith('/agent [--work]'));
-  assert.match(hint('/agent send', child)[0], /send main/);
+  assert.ok(hint('/sidecar ', state)[0].startsWith('/sidecar [--work]'));
+  assert.match(hint('/sidecar send', child)[0], /send main/);
   assert.equal(hint('hello', state), null);
 });
 
@@ -191,7 +193,7 @@ test('watch lines: one short line per observation, never the whole text', () => 
     "👁 Main's prompt · Please list three words.",
     "👁 Main's reply (4 lines) · Here are three words:",
   ]);
-  // Main's numbered lines must not reach the pane, or they read as the agent's own findings.
+  // Main's numbered lines must not reach the pane, or they read as the sidecar's own findings.
   assert.ok(watchLines(d).every(l => !/^\s*\d+[.)]\s/.test(l)));
   assert.ok(watchDetails([{ from: 'user', text: 'x'.repeat(1000) }]).seen[0].preview.length <= 160);
   assert.deepEqual(watchLines(undefined), ['👁 Watching Main']);
@@ -205,7 +207,7 @@ test('tray: ages count every reply, display drops Markdown marks', () => {
   assert.equal(ageLabel(first.age), '1 reply back');
   assert.equal(ageLabel(0), 'latest reply');
   assert.equal(ageLabel(3), '3 replies back');
-  assert.equal(first.text, 'Repeater 1: 📝 **List** three words'); // what /agent send main #1 sends, so both routes share "sent"
+  assert.equal(first.text, 'Repeater 1: 📝 **List** three words'); // what /sidecar send main #1 sends, so both routes share "sent"
   assert.equal(first.text, pickItems(replies[0].text, '#1', 'Repeater'));
   assert.equal(plain(first.body), '📝 List three words');
   assert.throws(() => pickItems(replies[0].text, '#2', 'Repeater'), /latest reply with findings/);

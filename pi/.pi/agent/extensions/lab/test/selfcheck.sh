@@ -1,9 +1,9 @@
 #!/bin/sh
-# Lab self-check: test agents whose right result is known in advance, each in its own lab.
+# Lab self-check: test sidecars whose right result is known in advance, each in its own lab.
 #   selfcheck.sh [PROJECT] [lab test options, e.g. --model p/id]
-# PROJECT defaults to ~/code/sandbox/rentaplace and must hold agents/{repeater,decoy,plain,sixer}.
+# PROJECT defaults to ~/code/sandbox/rentaplace and must hold sidecars/{repeater,decoy,plain,sixer}.
 # Every run opens a Herdr Lab window behind yours, uses model tokens, and is stopped afterwards.
-# Exit: 0 when every agent gave the expected result.
+# Exit: 0 when every sidecar gave the expected result.
 case "$1" in ''|-*) project="$HOME/code/sandbox/rentaplace" ;; *) project="$1"; shift ;; esac
 cd "$project" || exit 2
 bad=0; summary=""
@@ -15,9 +15,9 @@ run() { # NAME WANT WHAT
   summary="$summary
 $mark $name: expected exit $want, got $got ($what)"
 }
-run repeater 0 "/agent watches, sends a note, and the note reaches Main's model" "$@"
+run repeater 0 "/sidecar watches, sends a note, and the note reaches Main's model" "$@"
 run decoy    1 "the Tester fails a finding about the wrong thing (1 = the test failed, as it must)" "$@"
-run plain    0 "a job's own reply format wins over /agent's default" "$@"
+run plain    0 "a sidecar's own reply format wins over /sidecar's default" "$@"
 run sixer    0 "the Tester can read a reply whose start scrolled off" "$@"
 echo "$summary"
 echo
