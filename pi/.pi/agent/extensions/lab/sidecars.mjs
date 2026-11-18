@@ -2,7 +2,7 @@
 // index.ts and the tests. Adapted from herdr-pi-lab's index.ts (projectRoles, newRolePrompt) at 0.5.0.
 import fs from 'node:fs';
 import path from 'node:path';
-import { FORMAT, locate } from './expectations.mjs';
+import { FORMAT, locate, locateSkill } from './expectations.mjs';
 
 /** Sidecars with an expectations file: sidecars/<folder>/expectations.md. Named by the file's "# Name …" title, else the folder. */
 export function projectSidecars(project) {
@@ -18,12 +18,11 @@ export function projectSidecars(project) {
   return out;
 }
 
+const newestIn = dir => { const f = fs.existsSync(dir) ? fs.readdirSync(dir).filter(x => x.endsWith('.md')).sort().at(-1) : undefined; return f && path.join(dir, f); };
 /** The newest report in sidecars/<name>/reports/, or undefined. */
-export function latestReport(project, name) {
-  const dir = path.join(locate(project, name).dir, 'reports');
-  const f = fs.existsSync(dir) ? fs.readdirSync(dir).filter(x => x.endsWith('.md')).sort().at(-1) : undefined;
-  return f && path.join(dir, f);
-}
+export const latestReport = (project, name) => newestIn(path.join(locate(project, name).dir, 'reports'));
+/** The newest report in .agents/skills/<name>/reports/, or undefined. */
+export const latestSkillReport = (project, name) => newestIn(path.join(locateSkill(project, name).dir, 'reports'));
 
 /** What /lab report shows in the conversation: the report up to "What each pane showed", without the image line. */
 export const reportExcerpt = text => text.split('## What each pane showed')[0].replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').trimEnd();

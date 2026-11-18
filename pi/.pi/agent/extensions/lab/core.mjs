@@ -12,7 +12,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parse, locate, instructions, access, extraPanes } from './expectations.mjs';
+import { parse, locate, locateSkill, instructions, access, extraPanes } from './expectations.mjs';
 
 export const HERE = path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)));
 export const LAB_HOME = process.env.LAB_HOME || path.join(os.homedir(), '.lab');
@@ -195,8 +195,9 @@ export function carriedExtensions(project = process.cwd()) {
 const LEAVE_OUT = [
   ['git', /(^|\/)\.git(\/|$)|(^|\/)\.gitmodules$/],
   ['secret', /(^|\/)\.env($|\.|rc$)|(^|\/)\.(netrc|npmrc|pypirc)$|(^|\/)id_[^/]*$|\.(pem|key|p12|pfx|jks|keystore|asc|gpg)$|(^|\/)([^/]*[-_.])?(auth|credentials?|secrets?|tokens?|passwords?)([-_.][^/]*)?\.(json|ya?ml|toml|txt|ini)$|(^|\/)service[-_]?account[^/]*\.json$/i],
-  ['agent', /(^|\/)(AGENTS|CLAUDE|GEMINI)(\.override)?\.md$|(^|\/)\.(pi|claude|cursor|codex|gemini|windsurf|aider[^/]*)(\/|$)|^(sidecars|agents|roles)(\/|$)|(^|\/)(sidecars|agents|roles)\/(.*\/)?[^/]*\.md$|(^|\/)\.cursorrules$|copilot-instructions\.md$/i],
-  ['expectations', /expectation|(^|\/)lab-scenarios\.md$|(^|\/)lab-reports(\/|$)/i],
+  // .agents/ holds skills: a skill under test reaches guest Main only through --skill, never through the copy.
+  ['agent', /(^|\/)(AGENTS|CLAUDE|GEMINI)(\.override)?\.md$|(^|\/)\.(pi|claude|agents|cursor|codex|gemini|windsurf|aider[^/]*)(\/|$)|^(sidecars|agents|roles)(\/|$)|(^|\/)(sidecars|agents|roles)\/(.*\/)?[^/]*\.md$|(^|\/)\.cursorrules$|copilot-instructions\.md$/i],
+  ['expectations', /expectation|(^|\/)BASELINE\.md$|(^|\/)lab-scenarios\.md$|(^|\/)lab-reports(\/|$)/i],
   // herdr-pi-lab's SKIP list: reports and build or cache folders, wherever they are.
   ['generated', /(^|\/)(reports|node_modules|\.cache|dist|build|\.next|\.venv|__pycache__)(\/|$)/i],
 ];
@@ -395,21 +396,7 @@ export async function startSidecarLab(o = {}, progress = () => {}) {
     hc(id, ['label', main, 'lab.pane=Main'], { check: false });
     writeRun(id, { phase: 'main', panes: { Main: main } });
     await piReady(id, main, 90);
-
-    // Run lines prepare the copy (plant a bug, seed data); the lab runs them itself, not a model.
-    const setup = [];
-    for (const step of spec.before.filter(s => s.kind === 'run')) {
-      progress(`Before: ${step.text.slice(0, 60)}`);
-      const res = spawnSync('/bin/sh', ['-c', step.text], { cwd: r.copy, env: { ...env(id), TMPDIR: d.tmp }, encoding: 'utf8', timeout: 120000 });
-      setup.push({ command: step.text, status: res.status, output: ((res.stdout || '') + (res.stderr || '')).slice(-2000) });
-      writeRun(id, { setup });
-      if (res.status !== 0) throw Error(`Before (line ${step.line}): "${step.text}" exited ${res.status ?? res.signal}: ${(res.stderr || res.stdout || '').trim().slice(-400) || 'no output'}`);
-    }
-    for (const step of spec.before.filter(s => s.kind === 'do')) {
-      if (step.pane !== 'Main') throw Error(`Before steps run in Main only (line ${step.line}).`);
-      progress(`Before: ${step.text.slice(0, 60)}`);
-      await sendLine(id, main, step.text, [main], { quiet: 2 });
-    }
+    await runBefore(id, spec, main, progress);
 
     progress(`Opening ${name} with /sidecar (${sidecarModel}${work ? ', --work' : ''})`);
     const known = new Set(panes(id).map(p => p.terminal));
@@ -427,19 +414,126 @@ export async function startSidecarLab(o = {}, progress = () => {}) {
     if (!instructionsArrived) throw Error(`${name} opened, but its instructions did not arrive whole (${(arrived || '').length} of ${sidecarInstructions.length} characters). Look at guest Main.`);
 
     if (!fs.existsSync(TESTER)) { progress('The Tester is not built yet; the lab stops here, open for you to look'); return id; }
-    progress('Opening the Tester');
-    // Like herdr-pi-lab: the Tester starts where the split puts it (the project copy) with the lab's Pi profile.
-    // Its tool limits keep it out of the files: only lab_* tools, no context files, no session (lesson line 223).
-    const testerArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
-      '--no-extensions', '-e', TESTER, '--tools', TESTER_TOOLS.join(','),
-      '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-mcp', '--no-session', '--name', 'Tester',
-      '--model', o.testerModel || model, '--append-system-prompt', path.join(HERE, 'tester', 'prompt.md'), '--lab-run', id, `Begin the black-box test: ${spec.items.length} expectation${spec.items.length === 1 ? '' : 's'}.`];
-    const before = new Set(panes(id).map(p => p.terminal));
-    appJson(id, ['do', 'pane.split', JSON.stringify({ pane: opened.pane, direction: 'down', argv: testerArgv })], { timeout: 20000 });
-    const tester = await until(() => panes(id).find(p => !before.has(p.terminal)), 30, 'the Tester pane');
-    hc(id, ['label', tester.terminal, 'lab.pane=Tester'], { check: false });
+    const tester = await openTester(id, { from: opened.pane, direction: 'down', model: o.testerModel || model, prompt: TESTER_PROMPT, count: spec.items.length }, progress);
     for (const extra of extraPanes(spec, name)) progress(`Note: the file names a pane "${extra}" that this lab does not open.`);
-    writeRun(id, { phase: 'testing', panes: { Main: main, [name]: opened.terminal, Tester: tester.terminal } });
+    writeRun(id, { phase: 'testing', panes: { Main: main, [name]: opened.terminal, Tester: tester } });
+    return id;
+  } catch (err) { throw await failed(id, o, err); }
+}
+
+/** Before: Run lines prepare the copy (plant a bug, seed data), run by the lab itself, not a model; then Do lines go to Main. */
+async function runBefore(id, spec, main, progress) {
+  const d = dirs(id), r = readRun(id), setup = [];
+  for (const step of spec.before.filter(s => s.kind === 'run')) {
+    progress(`Before: ${step.text.slice(0, 60)}`);
+    const res = spawnSync('/bin/sh', ['-c', step.text], { cwd: r.copy, env: { ...env(id), TMPDIR: d.tmp }, encoding: 'utf8', timeout: 120000 });
+    setup.push({ command: step.text, status: res.status, output: ((res.stdout || '') + (res.stderr || '')).slice(-2000) });
+    writeRun(id, { setup });
+    if (res.status !== 0) throw Error(`Before (line ${step.line}): "${step.text}" exited ${res.status ?? res.signal}: ${(res.stderr || res.stdout || '').trim().slice(-400) || 'no output'}`);
+  }
+  for (const step of spec.before.filter(s => s.kind === 'do')) {
+    if (step.pane !== 'Main') throw Error(`Before steps run in Main only (line ${step.line}).`);
+    progress(`Before: ${step.text.slice(0, 60)}`);
+    await sendLine(id, main, step.text, [main], { quiet: 2 });
+  }
+}
+
+/**
+ * Open the Tester by splitting pane `from`. Returns its terminal.
+ * Like herdr-pi-lab: the Tester starts where the split puts it (the project copy) with the lab's Pi profile.
+ * Its tool limits keep it out of the files: only lab_* tools, no context files, no session (lesson line 223).
+ */
+async function openTester(id, { from, direction, model, prompt, count }, progress) {
+  progress('Opening the Tester');
+  const argv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${dirs(id).profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
+    '--no-extensions', '-e', TESTER, '--tools', TESTER_TOOLS.join(','),
+    '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-mcp', '--no-session', '--name', 'Tester',
+    '--model', model, '--append-system-prompt', prompt, '--lab-run', id, `Begin the black-box test: ${count} expectation${count === 1 ? '' : 's'}.`];
+  const before = new Set(panes(id).map(p => p.terminal));
+  appJson(id, ['do', 'pane.split', JSON.stringify({ pane: from, direction, argv })], { timeout: 20000 });
+  const tester = await until(() => panes(id).find(p => !before.has(p.terminal)), 30, 'the Tester pane');
+  hc(id, ['label', tester.terminal, 'lab.pane=Tester'], { check: false });
+  return tester.terminal;
+}
+
+// ---------- isolate: start a lab for one skill ----------
+
+const TESTER_PROMPT = path.join(HERE, 'tester', 'prompt.md');
+const SKILL_TESTER_PROMPT = path.join(HERE, 'tester', 'skill-prompt.md');
+
+/** Files of the skill folder guest Main never gets: its test, its baseline and its reports. Also anything the copy calls a secret. */
+export function skillLeavesOut(rel) {
+  const f = String(rel).replace(/\\/g, '/');
+  return /expectation/i.test(f) || /(^|\/)BASELINE\.md$/i.test(f) || /(^|\/)reports(\/|$)/i.test(f) || LEAVE_OUT.find(([w]) => w === 'secret')[1].test(f);
+}
+
+/**
+ * Copy a skill folder to dest without what skillLeavesOut names. Only regular files; symlinks stay out.
+ * Returns { copied: [rel], left: [rel] }.
+ */
+export function stageSkill(src, dest) {
+  const copied = [], left = [];
+  const walk = rel => {
+    for (const e of fs.readdirSync(path.join(src, rel), { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (skillLeavesOut(r)) { left.push(r); continue; }
+      if (e.isDirectory()) walk(r);
+      else if (e.isFile()) { mkdir(path.dirname(path.join(dest, r))); fs.copyFileSync(path.join(src, r), path.join(dest, r)); copied.push(r); }
+      else left.push(r);
+    }
+  };
+  mkdir(dest); walk('');
+  return { copied, left };
+}
+
+/** Guest Main's Pi flags in a skill test: no extensions, read-only tools, no discovered skills, exactly the staged one. */
+export const skillMainFlags = ({ staged, model }) => ['--no-extensions', '--tools', MAIN_TOOLS,
+  '--no-skills', '--skill', staged, '--no-prompt-templates', '--no-themes', '--no-mcp', '--name', 'Main', '--model', model];
+
+/**
+ * Start a lab for .agents/skills/<name>/: copy the project (no .agents/, no expectations, no baseline), stage the
+ * skill outside the copy without its expectations, baseline or reports, open guest Main with only that skill
+ * (--no-skills --skill <staged>, read-only tools, no extensions), run the Before lines, then open the Tester
+ * to the right of Main. Returns the run id.
+ */
+export async function startSkillLab(o = {}, progress = () => {}) {
+  if (process.platform !== 'darwin') throw Error('The lab is built for macOS (it copies and signs Herdr.app)');
+  const project = path.resolve(o.project || process.cwd());
+  const loc = locateSkill(project, o.name);
+  if (loc.noSkill) throw Error(`No skill called ${o.name}: ${path.relative(project, loc.skillFile)} does not exist.`);
+  if (loc.missing) throw Error(`No expectations for the ${o.name} skill yet. Write ${path.relative(project, loc.file)} first.`);
+  const spec = parse(fs.readFileSync(loc.file, 'utf8'), 'Main');
+  const model = o.model || defaultModel();
+  if (!model) throw Error('No model given and no default model in your Pi settings. Pass --model provider/id');
+  need('hc'); need('herdr-app'); need('pi');
+
+  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [] });
+  o.onId?.(id);
+  fs.copyFileSync(loc.file, dirs(id).expectations);
+  writeResults(id, { items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })), result: null });
+  try {
+    await openLab(id, { behind: o.behind, withheld: [loc.file] }, progress);
+    const d = dirs(id), r = readRun(id);
+    // Outside the project copy, named after the skill: Pi reads SKILL.md and its support files from here.
+    const staged = path.join(d.root, 'skill', o.name);
+    const skillFiles = stageSkill(loc.dir, staged);
+    writeRun(id, { staged, skillFiles });
+    progress(`Staged the skill: ${skillFiles.copied.length} file${skillFiles.copied.length === 1 ? '' : 's'}${skillFiles.left.length ? `; left out ${skillFiles.left.join(', ')}` : ''}`);
+
+    progress('Starting guest Main');
+    const mainArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`, need('pi'), ...skillMainFlags({ staged, model })];
+    const space = appJson(id, ['do', 'space.new', JSON.stringify({ machine: '', name: `Lab · ${o.name}`, folder: r.copy, argv: mainArgv })], { timeout: 20000 });
+    if (!space?.terminal) throw Error(`Herdr Lab did not confirm guest Main: ${JSON.stringify(space)}`);
+    const main = space.terminal;
+    hc(id, ['label', main, 'lab.pane=Main'], { check: false });
+    writeRun(id, { phase: 'main', panes: { Main: main } });
+    await piReady(id, main, 90);
+    await runBefore(id, spec, main, progress);
+
+    const mainPane = await until(() => panes(id).find(p => p.terminal === main), 30, 'guest Main in the pane list');
+    const tester = await openTester(id, { from: mainPane.pane, direction: 'right', model: o.testerModel || model, prompt: SKILL_TESTER_PROMPT, count: spec.items.length }, progress);
+    for (const extra of extraPanes(spec, 'Main')) progress(`Note: the file names a pane "${extra}" that this lab does not open.`);
+    writeRun(id, { phase: 'testing', panes: { Main: main, Tester: tester } });
     return id;
   } catch (err) { throw await failed(id, o, err); }
 }

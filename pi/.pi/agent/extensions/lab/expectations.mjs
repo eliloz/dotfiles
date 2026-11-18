@@ -112,6 +112,16 @@ export function locate(project, name) {
   return { dir, file, sidecarFile: path.join(dir, 'sidecar.md'), folder: `sidecars/${name.toLowerCase()}`, missing: !fs.existsSync(file) };
 }
 
+/** Where a skill under test lives: .agents/skills/<name>/, with its SKILL.md and expectations.md. */
+export const SKILLS = '.agents/skills';
+export function locateSkill(project, name) {
+  if (!name) throw Error('Name the skill: lab test skill <name>, its folder in .agents/skills/.');
+  if (!NAME.test(String(name))) throw Error(`"${name}" is not a skill name. Use the skill's folder name, such as grilling.`);
+  const folder = `${SKILLS}/${name}`, dir = path.join(project, SKILLS, name);
+  const file = path.join(dir, 'expectations.md'), skillFile = path.join(dir, 'SKILL.md');
+  return { dir, file, skillFile, folder, missing: !fs.existsSync(file), noSkill: !fs.existsSync(skillFile) };
+}
+
 /**
  * The sidecar's instructions: the "## Instructions" section of sidecar.md, whitespace collapsed. Without a "## Instructions" heading,
  * the whole file minus its title (herdr-pi-lab). undefined when there is no sidecar.md.
@@ -141,6 +151,7 @@ export function access(dir) {
 export function testTarget(args, isFile) {
   const [first, ...rest] = args;
   if (!first || isFile(first)) return { kind: 'scenarios', file: first, pick: rest.join(' ') || undefined };
+  if (first === 'skill' && args.length <= 2) return { kind: 'skill', name: rest[0] };
   if (args.length === 1 && NAME.test(first)) return { kind: 'sidecar', name: first };
   return { kind: 'words', text: args.join('\n') };
 }

@@ -1,4 +1,5 @@
-// The sidecar lab's report: Markdown in sidecars/<name>/reports/ of the real project, plus a screenshot of the
+// The report of a sidecar or skill test: Markdown in <run.folder>/reports/ of the real project
+// (sidecars/<name>/ or .agents/skills/<name>/), plus a screenshot of the
 // lab window. Adapted from herdr-pi-lab's report.mjs (0.5.0). Every quote in it was checked against a
 // screen the Tester was shown; "What each pane showed" comes from the panes' Pi sessions (transcript()).
 import fs from 'node:fs';
@@ -13,12 +14,18 @@ export const headline = s => { const c = core.tally(s); return c.pass === c.tota
 
 /** Pure: the report's Markdown. */
 export function reportText({ run, results, summary, screens, shot, when = new Date(), id }) {
+  const skill = run.kind === 'skill';
+  const files = run.skillFiles?.copied || [];
   const lines = [
-    `# ${run.sidecar} · lab report`, '',
+    `# ${skill ? `Skill ${run.skill}` : run.sidecar} · lab report`, '',
     `**${headline(results)}** · ${when.toLocaleString()} · run \`${id}\``, '',
     summary, '',
-    `Sidecar: \`/sidecar ${run.work ? '--work ' : ''}${run.sidecar} --model ${run.sidecarModel} <Instructions from ${run.folder}/sidecar.md, ${run.instructionsChars} characters>\`${run.instructionsArrived ? ' · instructions arrived whole' : ''}`,
-    `Models: Main \`${run.model}\` · ${run.sidecar} \`${run.sidecarModel}\` · Tester \`${run.testerModel}\``,
+    skill
+      ? `Skill: guest Main started with \`--no-skills --skill <staged copy of ${run.folder}/>\` (${files.length} file${files.length === 1 ? '' : 's'}: ${files.join(', ') || 'none'})`
+      : `Sidecar: \`/sidecar ${run.work ? '--work ' : ''}${run.sidecar} --model ${run.sidecarModel} <Instructions from ${run.folder}/sidecar.md, ${run.instructionsChars} characters>\`${run.instructionsArrived ? ' · instructions arrived whole' : ''}`,
+    skill
+      ? `Models: Main \`${run.model}\` · Tester \`${run.testerModel}\``
+      : `Models: Main \`${run.model}\` · ${run.sidecar} \`${run.sidecarModel}\` · Tester \`${run.testerModel}\``,
     `Expectations: \`${run.folder}/expectations.md\``, '',
   ];
   for (const i of results.items) {
@@ -30,7 +37,7 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
     lines.push('');
   }
   if (shot) lines.push(`![The lab window at the end of the run](${path.basename(shot)})`, '');
-  lines.push('## What each pane showed', '', '_From each pane\'s Pi session; the sidecar\'s forked history and instructions are left out. The Tester never read this._', '');
+  lines.push('## What each pane showed', '', skill ? '_From each pane\'s Pi session. The Tester never read this._' : '_From each pane\'s Pi session; the sidecar\'s forked history and instructions are left out. The Tester never read this._', '');
   for (const [k, s] of Object.entries(screens)) lines.push(`### ${k}`, '', fence(s.length > 8000 ? '…' + s.slice(-8000) : s || '(nothing)'), '');
   return lines.join('\n');
 }

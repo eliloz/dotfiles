@@ -30,6 +30,9 @@ const renderResult = (result: any, options: any, theme: any) => {
 };
 const MARK: Record<string, string> = { pass: "✓", fail: "✗", running: "◐", pending: "○" };
 const add = (pool: Record<string, string[]>, pane: string, s: string) => { (pool[pane] ??= []).push(s); };
+// A sidecar test is about the sidecar's pane; a skill test is about Main, where the skill runs.
+const subjectPane = (run: any) => run.kind === "skill" ? "Main" : run.sidecar;
+const subject = (run: any) => run.kind === "skill" ? `skill ${run.skill}` : run.sidecar;
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag("lab-run", { type: "string", description: "The lab run this Tester belongs to." });
@@ -43,7 +46,7 @@ export default function (pi: ExtensionAPI) {
 	const load = () => {
 		const id = runId(), run = core.readRun(id), results = core.readResults(id);
 		if (!run || !results) throw Error("This lab run is gone.");
-		const spec = parse(fs.readFileSync(core.dirs(id).expectations, "utf8"), run.sidecar);
+		const spec = parse(fs.readFileSync(core.dirs(id).expectations, "utf8"), subjectPane(run));
 		return { id, run, results, spec };
 	};
 	const guests = (run: any): [string, string][] => Object.entries(run.panes || {}).filter(([k]) => k !== "Tester") as [string, string][];
@@ -65,7 +68,7 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const { run, results } = load();
 			const c = core.tally(results);
-			const head = results.result ? `Lab · ${run.sidecar} · ${headline(results)}` : `Lab · ${run.sidecar} · ${c.pass + c.fail}/${c.total} checked`;
+			const head = results.result ? `Lab · ${subject(run)} · ${headline(results)}` : `Lab · ${subject(run)} · ${c.pass + c.fail}/${c.total} checked`;
 			ui.ui.setWidget("lab-tester", [head, ...results.items.map((i: any) => `${MARK[i.verdict || (i.running ? "running" : "pending")]} ${i.id} · ${i.title}`)]);
 		} catch {}
 	}
@@ -74,7 +77,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_do",
 		label: "Lab · do",
-		description: "Run the Do lines of one expectation exactly as written (typed into the named guest pane), wait until Main and the sidecar are quiet, and return the lines to check and the end of every guest screen.",
+		description: "Run the Do lines of one expectation exactly as written (typed into the named guest pane), wait until the guest panes are quiet, and return the lines to check and the end of every guest screen.",
 		parameters: Type.Object({ expectation: Type.Integer({ minimum: 1 }) }),
 		renderResult,
 		async execute(_c, p) {
@@ -108,7 +111,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_look",
 		label: "Lab · look",
-		description: "Read the end of a guest pane's screen now (Main or the sidecar). With lines above 40 (up to 200) it also reads the pane's history above the screen, for a reply whose start has scrolled off.",
+		description: "Read the end of a guest pane's screen now (Main, or the sidecar in a sidecar test). With lines above 40 (up to 200) it also reads the pane's history above the screen, for a reply whose start has scrolled off.",
 		parameters: Type.Object({ pane: Type.String(), lines: Type.Optional(Type.Integer({ minimum: 5, maximum: 200 })) }),
 		renderResult,
 		async execute(_c, p) {
@@ -117,7 +120,7 @@ export default function (pi: ExtensionAPI) {
 			const want = p.lines || SCREEN_LINES, full = core.screen(id, pane.terminal);
 			// History reaches the top of the pane, where the instructions are shown: cut it off. `saw` stays the visible
 			// screen, so See/Absent never match a reply to an earlier expectation.
-			const instructions = want > SCREEN_LINES ? core.ownerInstructions(core.sessionFile(core.dirs(id).profile, run.sidecar)) || "" : "";
+			const instructions = want > SCREEN_LINES && run.sidecar ? core.ownerInstructions(core.sessionFile(core.dirs(id).profile, run.sidecar)) || "" : "";
 			const shown = core.lastLines(want > SCREEN_LINES ? belowInstructions(core.screen(id, pane.terminal, want), instructions) : full, want);
 			const rec = current(results);
 			if (rec) { add(rec.saw ??= {}, pane.name, full); add(rec.given ??= {}, pane.name, shown); save(id, results); }
@@ -173,7 +176,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_finish",
 		label: "Lab · finish",
-		description: "After every expectation has a verdict: write the report into the sidecar's reports folder, save a screenshot of this window, and hand the result to the person.",
+		description: "After every expectation has a verdict: write the report into the reports folder of the sidecar or skill under test, save a screenshot of this window, and hand the result to the person.",
 		parameters: Type.Object({ summary: Type.String({ minLength: 1, maxLength: 800 }) }),
 		renderResult,
 		async execute(_c, p) {

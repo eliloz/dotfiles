@@ -6,7 +6,7 @@ import * as core from './core.mjs';
 import { help } from './help.mjs';
 import { testTarget } from './expectations.mjs';
 import { headline, runsSummary } from './report.mjs';
-import { projectSidecars, latestReport } from './sidecars.mjs';
+import { projectSidecars, latestReport, latestSkillReport } from './sidecars.mjs';
 
 function parse(argv) {
   const o = { _: [] };
@@ -91,8 +91,8 @@ const isFile = f => { try { return fs.statSync(f).isFile(); } catch { return fal
  */
 async function testCmd(o) {
   const t = testTarget(o._, isFile);
-  if (o.runs && t.kind !== 'sidecar') throw Error('--runs is for a sidecar: lab test <Sidecar> --runs N');
-  if (t.kind === 'sidecar') return o.runs > 1 ? sidecarRuns(o, t.name) : (await sidecarCmd(o, t.name)).code;
+  if (o.runs && t.kind !== 'sidecar' && t.kind !== 'skill') throw Error('--runs is for a sidecar or a skill: lab test <Sidecar> --runs N, lab test skill <name> --runs N');
+  if (t.kind === 'sidecar' || t.kind === 'skill') return o.runs > 1 ? labRuns(o, t) : (await labCmd(o, t)).code;
   let file, scenarios;
   if (t.kind === 'scenarios') {
     file = t.file || DEFAULT_FILE;
@@ -109,28 +109,35 @@ async function testCmd(o) {
 }
 
 /**
- * lab test <Sidecar>: open the sidecar's lab (Main, Before, /sidecar, then the Tester). It stays open for you to look.
- * With --wait: block until the Tester has written its report, print the verdicts, then stop the lab (--keep: leave it open).
+ * lab test <Sidecar> / lab test skill <name>: open the lab (Main, Before, the sidecar if any, then the Tester).
+ * It stays open for you to look. With --wait: block until the Tester has written its report, print the verdicts,
+ * then stop the lab (--keep: leave it open). t = { kind: 'sidecar' | 'skill', name }.
  * Returns { code, res }: the exit code and the run's results.
  */
-async function sidecarCmd(o, name) {
+async function labCmd(o, t) {
   const onSignal = stopOnSignal(o.wait ? o : {}); // Ctrl-C while it opens (or waits) stops the lab
   // "· run <id>" lets /lab in Pi follow the run (widget, result message) while the lab is still opening.
   const onId = lab => { onSignal(lab); progress(`run ${lab}`); };
-  const id = await core.startSidecarLab({ name, model: o.model, sidecarModel: o.sidecarModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
+  const skill = t.kind === 'skill';
+  const id = skill
+    ? await core.startSkillLab({ name: t.name, model: o.model, testerModel: o.testerModel, behind: o.behind, onId }, progress)
+    : await core.startSidecarLab({ name: t.name, model: o.model, sidecarModel: o.sidecarModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
   const r = core.readRun(id);
-  console.log([`Lab ${id} for ${r.sidecar}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
+  const label = skill ? `skill ${r.skill}` : r.sidecar;
+  console.log([`Lab ${id} for ${label}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
     `Panes: ${core.panes(id).map(p => `${p.name} (${p.terminal})`).join(', ')}`,
-    `Models: Main ${r.model} · ${r.sidecar} ${r.sidecarModel} · Tester ${r.testerModel}`,
-    `${r.sidecar}'s instructions arrived whole: ${r.instructionsArrived ? 'yes' : 'no'} (${r.instructionsChars} characters)`,
+    ...(skill
+      ? [`Models: Main ${r.model} · Tester ${r.testerModel}`, `Skill staged for Main: ${r.skillFiles.copied.join(', ')}`]
+      : [`Models: Main ${r.model} · ${r.sidecar} ${r.sidecarModel} · Tester ${r.testerModel}`,
+        `${r.sidecar}'s instructions arrived whole: ${r.instructionsArrived ? 'yes' : 'no'} (${r.instructionsChars} characters)`]),
     ...(o.wait ? [] : [`Close it with: lab stop ${id}`])].join('\n'));
   if (!o.wait || r.phase !== 'testing') return { code: 0 };
   const res = await waitForTester(id, o.seconds || 900);
   if (interrupted) await interrupted;
   if (!core.readRun(id)) { console.log(`${id} was stopped during the run, so there is no report.`); return { code: 2 }; }
   const lines = res?.report
-    ? [`${r.sidecar}: ${headline(res)}`, ...res.items.map(i => `${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}${i.reason ? `\n     ${i.reason}` : ''}`), `Report: ${res.report}`]
-    : [`${r.sidecar}: unfinished · the Tester did not call lab_finish within ${o.seconds || 900} s`];
+    ? [`${label}: ${headline(res)}`, ...res.items.map(i => `${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}${i.reason ? `\n     ${i.reason}` : ''}`), `Report: ${res.report}`]
+    : [`${label}: unfinished · the Tester did not call lab_finish within ${o.seconds || 900} s`];
   if (o.keep) lines.push(`The lab is still open (--keep). Close it with: lab stop ${id}`);
   else lines.push(await stopText(id));
   console.log(lines.join('\n') + '\n');
@@ -138,19 +145,19 @@ async function sidecarCmd(o, name) {
 }
 
 /**
- * lab test <Sidecar> --runs N: the same test N times, one lab after another, each stopped when it ends.
- * One pass says little about a sidecar on a small model; this prints how often each expectation passed.
+ * lab test <Sidecar> --runs N, lab test skill <name> --runs N: the same test N times, one lab after another,
+ * each stopped when it ends. One pass says little on a small model; this prints how often each expectation passed.
  * Exit 0 only when every run passed; 2 when a run could not finish.
  */
-async function sidecarRuns(o, name) {
+async function labRuns(o, t) {
   if (o.keep) throw Error('--runs stops each lab before the next one opens, so it cannot be used with --keep');
   const runs = [];
   for (let n = 1; n <= o.runs; n++) {
     progress(`Run ${n} of ${o.runs}`);
-    runs.push(await sidecarCmd({ ...o, wait: true }, name));
+    runs.push(await labCmd({ ...o, wait: true }, t));
     if (runs.at(-1).code === 2 && !runs.at(-1).res?.items) break; // the lab itself could not run: more runs would not help
   }
-  console.log(runsSummary(name, runs, o.runs));
+  console.log(runsSummary(t.kind === 'skill' ? `Skill ${t.name}` : t.name, runs, o.runs));
   return Math.max(...runs.map(r => r.code));
 }
 
@@ -219,9 +226,10 @@ async function main(argv) {
     }
     case 'sidecars': { const a = projectSidecars(process.cwd()); console.log(o.json ? JSON.stringify(a) : a.length ? a.join('\n') : 'No sidecars with expectations here (sidecars/<name>/expectations.md).'); return 0; }
     case 'report': {
-      const name = o._[0]; if (!name) throw Error('lab report <Sidecar>');
-      const f = latestReport(process.cwd(), name);
-      if (!f) { console.log(`No reports for ${name} yet. Run: lab test ${name}`); return 1; }
+      const skill = o._[0] === 'skill' && o._.length === 2, name = skill ? o._[1] : o._[0];
+      if (!name) throw Error('lab report <Sidecar>, or lab report skill <name>');
+      const f = skill ? latestSkillReport(process.cwd(), name) : latestReport(process.cwd(), name);
+      if (!f) { console.log(`No reports for ${skill ? `the ${name} skill` : name} yet. Run: lab test ${skill ? 'skill ' : ''}${name}`); return 1; }
       console.log(o.json ? JSON.stringify({ report: f }) : `${fs.readFileSync(f, 'utf8').trimEnd()}\n\n${f}`); return 0;
     }
     case 'new': throw Error('lab new runs inside Pi: it interviews you in the conversation. Type /lab new <Sidecar> there.');

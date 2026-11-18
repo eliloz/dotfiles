@@ -20,6 +20,13 @@ Sidecars (sidecars/<name>/: sidecar.md, expectations.md, reports/)
   ${p} report <Sidecar>           The sidecar's latest report
   ${p} sidecars                   Sidecars here with expectations
 
+Skills (.agents/skills/<name>/: SKILL.md, expectations.md, reports/)
+  ${p} test skill <name>          Guest Main (read-only tools) starts with only that skill (--no-skills
+                               --skill <a staged copy without expectations, BASELINE.md or reports>);
+                               a black-box Tester to its right types each Do line into Main and judges
+                               from Main's screen alone. The project copy holds no .agents/ folder.
+  ${p} report skill <name>        The skill's latest report
+
 Scenarios (lab-scenarios.md)
   ${p} test                      Every scenario in lab-scenarios.md, each in its own lab
   ${p} test FILE [N|first|words] One scenario from a file of "## title" sections, one step per line
@@ -46,12 +53,13 @@ Options for test
   --sidecar-model p/id   The sidecar under test. Default: fast (/sidecar's small default)
   --tester-model p/id  The Tester (the judge). Default: --model
   --behind             Open the lab window behind your windows${shell ? `
-  --wait / --keep      Sidecar test: wait for the report; keep the lab open afterwards
-  --runs N             Sidecar test: run it N times, one lab after another, and print how often each
+  --wait / --keep      Sidecar or skill test: wait for the report; keep the lab open afterwards
+  --runs N             Sidecar or skill test: run it N times, one lab after another, and print how often each
                        expectation passed. One pass says little about a sidecar on a small model
   --seconds N          Give up after N seconds (default 900)` : ''}
 
-Expectations: sidecars/<name>/expectations.md. Do lines are typed exactly; Expect/Never are judged by the
+Expectations: sidecars/<name>/expectations.md or .agents/skills/<name>/expectations.md. In a skill
+test a line without a pane means Main. Do lines are typed exactly; Expect/Never are judged by the
 Tester from quoted screen text (a quote that was not on a screen it was shown is rejected); See/Absent
 are checked by the lab itself and override the Tester.
 ${FORMAT.split('\n').map(l => '  ' + l).join('\n')}
@@ -79,7 +87,7 @@ Exit codes for test: 0 all passed, 1 something failed, 2 the lab could not run,
 
 Quitting Pi while a lab is opening stops that lab.`}
 
-Reports: sidecars/<name>/reports/<time>-<run>.md (+ .png) for sidecars; ~/.lab/reports/ for scenarios.
+Reports: <folder>/reports/<time>-<run>.md (+ .png) for sidecars and skills; ~/.lab/reports/ for scenarios.
 Each run uses model tokens.`;
 }
 
