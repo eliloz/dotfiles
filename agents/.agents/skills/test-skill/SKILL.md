@@ -1,13 +1,18 @@
 ---
 name: test-skill
-description: Lab testing of a project's skills against their expectations and baselines. Use when adding, changing or testing a skill in .agents/skills/, when a skill misbehaves, or after pulling skill updates.
+description: Lab testing of skills against a project's expectations and baselines. Use when adding, changing or testing a skill (global in ~/.agents/skills/, or the project's own in .agents/skills/), when a skill misbehaves, or after pulling skill updates.
 ---
 
 # Test skill
 
-Measure one skill of this project in the lab, against its **expectations**, and keep its **baseline** true. Arguments: `<name>`, `<name> <complaint>`, or `all`.
+Measure one skill in the lab, against this project's **expectations** for it, and keep its **baseline** true. Arguments: `<name>`, `<name> <complaint>`, or `all`.
 
-The words are the lab's: **expectation** (a titled block of Do, Expect, Never, See, Absent and Check lines in `.agents/skills/<name>/expectations.md`), **Check** (a shell command the lab runs in the copy; exit 0 passes), **baseline** (`BASELINE.md`: pass counts per expectation over 5 runs, with what produced them), **bar** (what a change must reach to be kept). Formats, commands and gotchas: [REFERENCE.md](REFERENCE.md). Read it before the first lab run.
+The words are the lab's: **expectation** (a titled block of Do, Expect, Never, See, Absent and Check lines in `.agents/skill-tests/<name>/expectations.md`), **Check** (a shell command the lab runs in the copy; exit 0 passes), **baseline** (`BASELINE.md`: pass counts per expectation over 5 runs, with what produced them), **bar** (what a change must reach to be kept). Formats, commands and gotchas: [REFERENCE.md](REFERENCE.md). Read it before the first lab run.
+
+Two places, never mixed:
+
+- **The tests** are this project's: `.agents/skill-tests/<name>/` (`expectations.md`, `BASELINE.md`, `reports/`).
+- **The skill text** is the project's own `.agents/skills/<name>/SKILL.md` if that file exists, else the global `~/.agents/skills/<name>/SKILL.md`, whose real file is in `~/dotfiles/agents/.agents/skills/<name>/`. The lab picks the same way and its report's "Skill text:" line names the copy it tested.
 
 ## Rules
 
@@ -15,21 +20,22 @@ The words are the lab's: **expectation** (a titled block of Do, Expect, Never, S
 - **Every batch is announced.** Before any lab run, state how many runs and why, and wait for a yes. One yes covers the runs you named.
 - **Counts come with transcripts.** After each batch, read Main's section of the reports, not only the tally: a 5/5 can hide a weakness, and a failure can be the lab's (a timeout) rather than the skill's.
 - **One change at a time** to a `SKILL.md`, measured before it is kept.
-- **Commit locally, never push.** A kept change commits the skill and `BASELINE.md` together, with a before/after table in the message. A change not kept is reverted and still recorded in `BASELINE.md` under "Tried, not kept".
+- **Commit locally, never push.** A kept change commits the skill in the repository that holds it (`~/dotfiles` for a global skill) and the expectation and `BASELINE.md` in this project, with the same before/after table in both messages. A change not kept is reverted and still recorded in `BASELINE.md` under "Tried, not kept".
+- **One copy per name.** A project copy shadows the global skill here. Make one only to try a change; a kept change goes into the global text and the copy is deleted.
 
 ## 1. Find the state
 
-Run from the project root. `lab doctor` must show every line ✓. For `all`, do this step for every `.agents/skills/*/expectations.md`, show the list, and take one yes for the whole set.
+Run from the project root. `lab doctor` must show every line ✓. For `all`, do this step for every `.agents/skill-tests/*/expectations.md`, show the list, and take one yes for the whole set.
 
-Read `.agents/skills/<name>/` and decide, first match wins:
+Find the skill text (above), read `.agents/skill-tests/<name>/`, and decide, first match wins:
 
 | Found | Path |
 |---|---|
-| No `SKILL.md` | Stop: say which skills exist |
+| No `SKILL.md` in either place | Stop: say which skills exist |
 | No `expectations.md` | **New** (step 2) |
 | A complaint was given | **Improve** (step 5) |
-| `SKILL.md` differs from the skill commit in `BASELINE.md` (committed or not) | **Measure a change** (step 3) |
-| Model, Pi version or lab commit differs from `BASELINE.md`'s "Current" row | **Rerun** (step 4) |
+| `SKILL.md`'s hash differs from the one `BASELINE.md` records (REFERENCE.md). A baseline without a hash: compare with its skill commit | **Measure a change** (step 3) |
+| Model, Pi version or lab commit differs from what `BASELINE.md` says its current counts stand on | **Rerun** (step 4) |
 | Nothing differs | **Current**: say so and stop, unless the user asks for a check |
 
 Tell the user the path, the reason (the exact difference found), and the runs it will cost. Wait for a yes.
@@ -62,4 +68,4 @@ Tell the user the path, the reason (the exact difference found), and the runs it
 2. Show it fails or is flaky: the latest baseline's transcripts, if they already show it, or `--runs 5`. Done when at least one run fails on that line. If none does, report that and stop: there is nothing to fix yet.
 3. Propose one change to `SKILL.md`, in one or two sentences, and get a yes.
 4. Run the stop-at-first-failure loop (REFERENCE.md). The bar: the target expectation 5/5, every other expectation no lower than its baseline.
-5. Kept: commit skill, expectation and `BASELINE.md` together. Not kept: revert the skill, record the attempt with the run that failed and why, and say what the failure suggests trying next.
+5. Kept: commit the skill, and the expectation with `BASELINE.md`, as the rules say. Not kept: revert the skill, record the attempt with the run that failed and why, and say what the failure suggests trying next.

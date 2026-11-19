@@ -6,8 +6,8 @@ The expectations format, the commands and the flags are in `lab --help` (section
 
 - Baseline or full batch: `lab test skill <name> --runs 5 --behind`. Prints the tally and one report path per run.
 - Trial run: `lab test skill <name> --behind --wait`.
-- Reports: `.agents/skills/<name>/reports/<time>-<lab>.md`. Each holds the Tester's verdicts with quotes, the lab's Check results, then "What each pane showed": Main's whole transcript. The Tester never reads the report.
-- Versions for `BASELINE.md`: `pi --version`; lab commit `git -C ~/dotfiles log -1 --format=%h -- pi/.pi/agent/extensions/lab`; model from `lab doctor` ("default model", or `$LAB_MODEL`); skill commit `git log -1 --format=%h -- .agents/skills/<name>/SKILL.md`.
+- Reports: `.agents/skill-tests/<name>/reports/<time>-<lab>.md`, or `lab report skill <name>` for the latest. Each names the skill copy tested ("Skill text:": real path, repository commit, hash), then holds the Tester's verdicts with quotes, the lab's Check results, then "What each pane showed": Main's whole transcript. The Tester never reads the report.
+- Versions for `BASELINE.md`: `pi --version`; lab commit `git -C ~/dotfiles log -1 --format=%h -- pi/.pi/agent/extensions/lab`; model from `lab doctor` ("default model", or `$LAB_MODEL`); skill path, commit and hash from the report's "Skill text:" line. The hash by hand: `shasum -a 256 <SKILL.md> | cut -c1-12`. It is what decides whether a skill changed: a skill that moved between repositories unchanged keeps its hash, and its baseline stays current.
 
 ## Stop at the first failure
 
@@ -36,6 +36,7 @@ Tally the other expectations across the runs that happened and compare them with
 ## Gotchas
 
 - **The copy holds tracked files only.** A fixture file must be `git add`ed before a lab sees it ("No such file" at Before).
+- **A project copy shadows the global skill.** If `.agents/skills/<name>/SKILL.md` exists here, the lab tests that one. Check the report's "Skill text:" line when a count surprises you.
 - **The copy leaves out `.agents/`, `BASELINE.md`, `expectations*`, `reports/`, `CLAUDE.md`, `.git`.** It keeps the root `AGENTS.md` in skill tests, installs a local tracker in `.scratch/`, and no pane has a GitHub login.
 - **A timeout looks like a failure.** Main still reading files when the wait ends fails the step. Read the transcript before counting it as the skill's.
 - **Never press ctrl+o in a lab's Main pane.** It expands the skill's text on screen, where the Tester can read it.
@@ -51,11 +52,13 @@ The score to beat. Written by hand from lab runs; the lab never changes this fil
 
 ## Current: <what this is> (<date>)
 
-| Date | Model (Main and Tester) | Pi | Lab | Fixture commit | Skill |
+| Date | Model (Main and Tester) | Pi | Lab | Project commit | Skill |
 |---|---|---|---|---|---|
-| <date> | `<provider/id>` | <version> | `~/dotfiles` <hash> | `<hash>` | <Matt's `<hash>`, unchanged / plus <change> (this commit)> |
+| <date> | `<provider/id>` | <version> | `~/dotfiles` <hash> | `<hash>` | <Matt's text, unchanged / plus <change> (`~/dotfiles` <hash>)> |
 
-Command: `lab test skill <name> --runs 5 --behind`, from the fixture. <Tools, tracker, setup.>
+Skill text: `<real path of SKILL.md>`, SHA-256 `<12 hex digits>`, `<repository>` <commit>.
+
+Command: `lab test skill <name> --runs 5 --behind`, from the project's root. <Tools, tracker, setup.>
 
 | # | Expectation | Passes |
 |---|---|---|
