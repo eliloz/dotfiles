@@ -26,13 +26,22 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
     skill
       ? `Models: Main \`${run.model}\` · Tester \`${run.testerModel}\``
       : `Models: Main \`${run.model}\` · ${run.sidecar} \`${run.sidecarModel}\` · Tester \`${run.testerModel}\``,
+    ...(skill ? [
+      `Main's tools: \`${run.mainTools || 'read,grep,find,ls'}\`${/(^|,)bash(,|$)/.test(run.mainTools || '') ? ' (bash: Main could run commands; the lab gives it no GitHub or GitLab login)' : ''}`,
+      `Tracker: local Markdown in \`.scratch/\` (the lab's default)${run.tracker ? `; the project's own tracker file is ${run.tracker.project}` : ''}`,
+    ] : []),
     `Expectations: \`${run.folder}/expectations.md\``, '',
   ];
   for (const i of results.items) {
     lines.push(`## ${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}`, '', i.reason || '(no reason given)', '');
     for (const e of i.evidence || []) lines.push(`- ${e.pane}: “${e.quote}”`);
     for (const a of i.absent || []) lines.push(`- Not on ${a.pane}: “${a.text}”`);
-    for (const o of i.observed || []) lines.push(`- Lab check ${o.ok ? '✓' : '✗'} ${o.kind === 'see' ? 'shows' : 'does not show'} on ${o.pane}: “${o.text}”`);
+    for (const o of i.observed || []) {
+      if (o.kind !== 'check') { lines.push(`- Lab check ${o.ok ? '✓' : '✗'} ${o.kind === 'see' ? 'shows' : 'does not show'} on ${o.pane}: “${o.text}”`); continue; }
+      lines.push(`- Lab check ${o.ok ? '✓' : '✗'} \`${o.text}\` exited ${o.status}`);
+      const out = (i.checks || []).find(c => c.command === o.text)?.output;
+      if (!o.ok && out?.trim()) lines.push('', fence(out), '');
+    }
     if (i.tester && i.tester !== i.verdict) lines.push(`- The Tester said ${i.tester}; the lab's own checks decided ${i.verdict}.`);
     lines.push('');
   }

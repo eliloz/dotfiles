@@ -55,10 +55,10 @@ test('lists, numbered headings, comments and indented continuation lines', () =>
 });
 
 test('mistakes name the line and say how to fix them', () => {
-  assert.throws(() => parse('## A\nCheck: something', 'Critic'), /Line 2: start with Do, Run, Expect/);
+  assert.throws(() => parse('## A\nVerify: something', 'Critic'), /Line 2: start with Do, Run, Tools, Expect, Never, See, Absent or Check/);
   assert.throws(() => parse('## A\nDo (Main): hi', 'Critic'), /has no check/);
   assert.throws(() => parse('# Only a title', 'Critic'), /No expectations yet/);
-  assert.throws(() => parse('## Before\nExpect: x\n## A\nExpect: y', 'Critic'), /Line 2: the Before section only holds Do and Run/);
+  assert.throws(() => parse('## Before\nExpect: x\n## A\nExpect: y', 'Critic'), /Line 2: the Before section only holds Do, Run and Tools/);
   assert.throws(() => parse('## A\nRun: rm -rf x\nExpect: y', 'Critic'), /Line 2: Run lines belong under "## Before"/);
 });
 

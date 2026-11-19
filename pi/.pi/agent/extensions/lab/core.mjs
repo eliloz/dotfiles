@@ -12,7 +12,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { parse, locate, locateSkill, instructions, access, extraPanes } from './expectations.mjs';
+import { parse, locate, locateSkill, instructions, access, extraPanes, checks } from './expectations.mjs';
 
 export const HERE = path.dirname(fs.realpathSync(fileURLToPath(import.meta.url)));
 export const LAB_HOME = process.env.LAB_HOME || path.join(os.homedir(), '.lab');
@@ -44,7 +44,7 @@ export function dirs(id) {
     root, run: path.join(root, 'run.json'), captured: path.join(root, 'captured.txt'),
     results: path.join(root, 'results.json'), expectations: path.join(root, 'expectations.md'),
     profile: path.join(root, 'pi-agent'), judgeProfile: path.join(root, 'judge-agent'), judgeCwd: path.join(root, 'judge-cwd'),
-    tmp: path.join(root, 'tmp'), app: path.join(root, 'app'), config: path.join(root, 'config'), logs: path.join(root, 'logs'), shots: path.join(root, 'shots'),
+    tmp: path.join(root, 'tmp'), noLogins: path.join(root, 'no-logins'), app: path.join(root, 'app'), config: path.join(root, 'config'), logs: path.join(root, 'logs'), shots: path.join(root, 'shots'),
     sock, state: path.join(sock, 'st'), coreSocket: path.join(sock, 'st', 'herdr-core', id, `${id}.sock`),
   };
 }
@@ -60,15 +60,23 @@ export function tally(s) {
   return c;
 }
 
-/** The lab's environment: yours, minus anything naming another Herdr core, window or Pi profile. */
+/**
+ * No lab process is logged in to GitHub or GitLab: their token variables are removed and gh and glab read an empty
+ * config folder, so a skill told to publish issues cannot reach a real tracker (gh: "not logged into any hosts").
+ */
+export const LOGIN_VARS = /^(GH_|GITHUB_|GITLAB_|GLAB_)/;
+export const UNSET_LOGINS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST', 'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'GLAB_TOKEN', 'GITLAB_HOST'];
+export const noLoginEnv = id => ({ GH_CONFIG_DIR: dirs(id).noLogins, GLAB_CONFIG_DIR: dirs(id).noLogins });
+
+/** The lab's environment: yours, minus anything naming another Herdr core, window or Pi profile, and minus forge logins. */
 export function env(id, extra = {}) {
   const d = dirs(id), e = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (/^(HC_|HERDR_|PI_|LAB_|XDG_(STATE|CONFIG|RUNTIME)_)/.test(k) || k === 'TMUX' || k === 'TMUX_PANE') continue;
+    if (/^(HC_|HERDR_|PI_|LAB_|XDG_(STATE|CONFIG|RUNTIME)_)/.test(k) || LOGIN_VARS.test(k) || k === 'TMUX' || k === 'TMUX_PANE') continue;
     e[k] = v;
   }
   return {
-    ...e, HC_SESSION: id, XDG_STATE_HOME: d.state, XDG_CONFIG_HOME: d.config, HERDR_APP_HOME: d.app,
+    ...e, ...noLoginEnv(id), HC_SESSION: id, XDG_STATE_HOME: d.state, XDG_CONFIG_HOME: d.config, HERDR_APP_HOME: d.app,
     HERDR_APP_NO_SOUND: '1', HERDR_TELEMETRY: '0', HERDR_RELEASES_URL: NO_UPDATES, PI_CODING_AGENT_DIR: d.profile, PI_SKIP_VERSION_CHECK: '1', LAB_RUN: id, ...extra,
   };
 }
@@ -226,8 +234,11 @@ function ownFile(f, sidecarFolder) {
 /** Does this file go into the lab copy? See leaveOutReason. */
 export const labCopies = (file, sidecarFolder) => !leaveOutReason(file, sidecarFolder);
 
-/** Copy only git-tracked files, without .git, secrets, sidecar files or expectations. No new repository. */
-export function copyProject(project, dest, withheld = [], sidecarFolder) {
+/**
+ * Copy only git-tracked files, without .git, secrets, sidecar files or expectations. No new repository.
+ * `keep` names files the agent rule would leave out but this lab run needs (a skill test keeps the root AGENTS.md).
+ */
+export function copyProject(project, dest, withheld = [], sidecarFolder, keep = []) {
   const ls = spawnSync('git', ['-C', project, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 << 20 });
   if (ls.status !== 0) throw Error(`${project} is not a git repository, so it has no tracked files to copy. Run the lab from inside a git project.`);
   const never = new Set(withheld.map(w => path.relative(project, path.resolve(project, w))));
@@ -237,7 +248,7 @@ export function copyProject(project, dest, withheld = [], sidecarFolder) {
   for (const f of ls.stdout.split('\0').filter(Boolean)) {
     if (never.has(f)) { left.withheld.push(f); continue; }
     const why = leaveOutReason(f, sidecarFolder);
-    if (why) { left[why].push(f); continue; }
+    if (why && !(why === 'agent' && keep.includes(f))) { left[why].push(f); continue; }
     const a = path.join(project, f);
     let s; try { s = fs.lstatSync(a); } catch { left.other.push(`${f} (missing on disk)`); continue; }
     if (!s.isFile()) { left.other.push(`${f} (${s.isSymbolicLink() ? 'symlink' : 'not a file'})`); continue; }
@@ -275,7 +286,7 @@ function newLab(project, patch) {
   const id = `lab-${randomBytes(3).toString('hex')}`;
   const d = dirs(id);
   const projectName = (path.basename(project).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^\.+/, '') || 'project').slice(0, 40);
-  for (const p of [d.root, d.logs, d.config, d.app, d.shots, d.judgeCwd, d.state, d.tmp]) mkdir(p);
+  for (const p of [d.root, d.logs, d.config, d.app, d.shots, d.judgeCwd, d.state, d.tmp, d.noLogins]) mkdir(p);
   writeRun(id, { id, project, copy: path.join(d.root, projectName), created: new Date().toISOString(), phase: 'starting', panes: {}, made: [], ...patch });
   fs.writeFileSync(d.captured, '');
   return id;
@@ -285,13 +296,13 @@ function newLab(project, patch) {
 async function openLab(id, o, progress) {
   const d = dirs(id), r = readRun(id);
   progress('Copying the project (tracked files only)');
-  const copied = copyProject(r.project, r.copy, o.withheld || [], o.sidecarFolder);
+  const copied = copyProject(r.project, r.copy, o.withheld || [], o.sidecarFolder, o.keep || []);
   writeRun(id, { copied, made: ['run folder', 'project copy'] });
 
   progress('Making the lab Pi profiles (linked to your model logins)');
   piProfile(d.profile); piProfile(d.judgeProfile);
   mkdir(path.join(d.config, 'herdr-core'));
-  fs.writeFileSync(path.join(d.config, 'herdr-core', 'config.toml'), `notes = false\nshell = ${JSON.stringify(userShell())}\n`);
+  fs.writeFileSync(path.join(d.config, 'herdr-core', 'config.toml'), `notes = false\nshell = ${JSON.stringify(userShell(id))}\n`);
 
   progress('Preparing the Herdr Lab app copy');
   const a = labApp();
@@ -364,6 +375,7 @@ export async function startSidecarLab(o = {}, progress = () => {}) {
   if (loc.missing) throw Error(`No expectations for ${o.name} yet. Write ${path.relative(project, loc.file)}, or run /lab new ${o.name} to write them together.`);
   const name = o.name.charAt(0).toUpperCase() + o.name.slice(1);
   const spec = parse(fs.readFileSync(loc.file, 'utf8'), name);
+  if (spec.tools) throw Error(`${path.relative(project, loc.file)} has a Tools line, which is for skill tests. A sidecar that changes files says "Access: work" in its sidecar.md.`);
   const sidecarInstructions = instructions(loc.dir);
   if (!sidecarInstructions) throw Error(`${name} has no sidecar.md yet. Write ${path.relative(project, loc.sidecarFile)} with a "## Instructions" section first (or run /lab new ${name}).`);
   const sidecarExt = carriedExtensions(project).find(t => t.name === 'sidecar');
@@ -387,7 +399,7 @@ export async function startSidecarLab(o = {}, progress = () => {}) {
     const d = dirs(id), r = readRun(id);
 
     progress('Starting guest Main');
-    const mainArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`,
+    const mainArgv = ['/usr/bin/env', ...paneEnv(id), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`,
       need('pi'), '--no-extensions', '-e', sidecarExt.file, '--tools', MAIN_TOOLS,
       '--no-skills', '--no-prompt-templates', '--no-themes', '--no-mcp', '--name', 'Main', '--model', model];
     const space = appJson(id, ['do', 'space.new', JSON.stringify({ machine: '', name: `Lab · ${name}`, folder: r.copy, argv: mainArgv })], { timeout: 20000 });
@@ -426,10 +438,10 @@ async function runBefore(id, spec, main, progress) {
   const d = dirs(id), r = readRun(id), setup = [];
   for (const step of spec.before.filter(s => s.kind === 'run')) {
     progress(`Before: ${step.text.slice(0, 60)}`);
-    const res = spawnSync('/bin/sh', ['-c', step.text], { cwd: r.copy, env: { ...env(id), TMPDIR: d.tmp }, encoding: 'utf8', timeout: 120000 });
-    setup.push({ command: step.text, status: res.status, output: ((res.stdout || '') + (res.stderr || '')).slice(-2000) });
+    const res = runCommand(id, step.text, 120);
+    setup.push({ command: step.text, status: res.status, output: res.output });
     writeRun(id, { setup });
-    if (res.status !== 0) throw Error(`Before (line ${step.line}): "${step.text}" exited ${res.status ?? res.signal}: ${(res.stderr || res.stdout || '').trim().slice(-400) || 'no output'}`);
+    if (res.status !== 0) throw Error(`Before (line ${step.line}): "${step.text}" exited ${res.status}: ${res.output.trim().slice(-400) || 'no output'}`);
   }
   for (const step of spec.before.filter(s => s.kind === 'do')) {
     if (step.pane !== 'Main') throw Error(`Before steps run in Main only (line ${step.line}).`);
@@ -439,13 +451,29 @@ async function runBefore(id, spec, main, progress) {
 }
 
 /**
+ * Run one shell command in the project copy, as the lab (not a model): Run lines and Check lines.
+ * { status: exit code, or "timeout" / the signal; output: the last 2,000 characters of stdout and stderr }.
+ */
+export function runCommand(id, text, seconds = 60) {
+  const d = dirs(id), r = readRun(id);
+  const res = spawnSync('/bin/sh', ['-c', text], { cwd: r.copy, env: { ...env(id), TMPDIR: d.tmp }, encoding: 'utf8', timeout: seconds * 1000, stdio: ['ignore', 'pipe', 'pipe'] });
+  const status = res.error?.code === 'ETIMEDOUT' ? 'timeout' : res.status ?? res.signal ?? 'failed';
+  return { status, output: ((res.stdout || '') + (res.stderr || '')).slice(-2000) };
+}
+
+/** Run an expectation's Check lines after its step: exit 0 passes. [{ line, command, status, ok, output }]. */
+export function runChecks(id, item, seconds = 60) {
+  return checks(item).map(l => { const r = runCommand(id, l.text, seconds); return { line: l.line, command: l.text, status: r.status, ok: r.status === 0, output: r.output }; });
+}
+
+/**
  * Open the Tester by splitting pane `from`. Returns its terminal.
  * Like herdr-pi-lab: the Tester starts where the split puts it (the project copy) with the lab's Pi profile.
  * Its tool limits keep it out of the files: only lab_* tools, no context files, no session (lesson line 223).
  */
 async function openTester(id, { from, direction, model, prompt, count }, progress) {
   progress('Opening the Tester');
-  const argv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${dirs(id).profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
+  const argv = ['/usr/bin/env', ...paneEnv(id), `PI_CODING_AGENT_DIR=${dirs(id).profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'),
     '--no-extensions', '-e', TESTER, '--tools', TESTER_TOOLS.join(','),
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-context-files', '--no-mcp', '--no-session', '--name', 'Tester',
     '--model', model, '--append-system-prompt', prompt, '--lab-run', id, `Begin the black-box test: ${count} expectation${count === 1 ? '' : 's'}.`];
@@ -486,9 +514,39 @@ export function stageSkill(src, dest) {
   return { copied, left };
 }
 
-/** Guest Main's Pi flags in a skill test: no extensions, read-only tools, no discovered skills, exactly the staged one. */
-export const skillMainFlags = ({ staged, model }) => ['--no-extensions', '--tools', MAIN_TOOLS,
+/** Guest Main's Pi flags in a skill test: no extensions, the test's tools (read-only by default), no discovered skills, exactly the staged one. */
+export const skillMainFlags = ({ staged, model, tools }) => ['--no-extensions', '--tools', tools?.length ? tools.join(',') : MAIN_TOOLS,
   '--no-skills', '--skill', staged, '--no-prompt-templates', '--no-themes', '--no-mcp', '--name', 'Main', '--model', model];
+
+/** Files a skill test keeps although the agent rule leaves them out: the project's instructions, which Pi loads by itself. */
+export const SKILL_KEEPS = ['AGENTS.md', 'CLAUDE.md'];
+export const TRACKER_FILE = 'docs/agents/issue-tracker.md';
+const LOCAL_TRACKER = path.join(HERE, 'tracker', 'issue-tracker-local.md');
+export const TRACKER_LINE = 'Issues and specs live as local Markdown files under `.scratch/`, never on a remote tracker. See `docs/agents/issue-tracker.md`.';
+
+/**
+ * Every skill test gets a local-file tracker, whatever the project configures: the lab writes its own
+ * docs/agents/issue-tracker.md (Matt's local template) into the copy and points the copy's AGENTS.md and CLAUDE.md
+ * at it ("### Issue tracker"), adding that section when there is none. With no login in the lab (paneEnv) this is
+ * the second guard against a real issue. Returns { project: "the same" | "different" | "absent" }: the project's own file.
+ */
+export function installLocalTracker(project, copy, template = LOCAL_TRACKER) {
+  const local = fs.readFileSync(template, 'utf8');
+  let own; try { own = fs.readFileSync(path.join(project, TRACKER_FILE), 'utf8'); } catch {}
+  const dest = path.join(copy, TRACKER_FILE);
+  mkdir(path.dirname(dest));
+  fs.writeFileSync(dest, local);
+  const section = `### Issue tracker\n\n${TRACKER_LINE}\n`;
+  const files = SKILL_KEEPS.map(f => path.join(copy, f)).filter(f => { try { return fs.lstatSync(f).isFile(); } catch { return false; } });
+  if (!files.length) files.push(path.join(copy, 'AGENTS.md'));
+  for (const f of files) {
+    const text = fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '';
+    const re = /^###[ \t]+Issue tracker[ \t]*\r?\n[\s\S]*?(?=^#{1,3}[ \t]|(?![\s\S]))/m;
+    const next = re.test(text) ? text.replace(re, section + '\n') : `${text.replace(/\s*$/, '')}${text.trim() ? '\n\n' : ''}## Agent skills\n\n${section}`;
+    fs.writeFileSync(f, next.replace(/\n{3,}/g, '\n\n').replace(/\s*$/, '\n'));
+  }
+  return { project: own === undefined ? 'absent' : own.trim() === local.trim() ? 'the same' : 'different', files: files.map(f => path.relative(copy, f)) };
+}
 
 /**
  * Start a lab for .agents/skills/<name>/: copy the project (no .agents/, no expectations, no baseline), stage the
@@ -507,13 +565,17 @@ export async function startSkillLab(o = {}, progress = () => {}) {
   if (!model) throw Error('No model given and no default model in your Pi settings. Pass --model provider/id');
   need('hc'); need('herdr-app'); need('pi');
 
-  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [] });
+  const mainTools = spec.tools?.length ? spec.tools.join(',') : MAIN_TOOLS;
+  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [], mainTools });
   o.onId?.(id);
   fs.copyFileSync(loc.file, dirs(id).expectations);
   writeResults(id, { items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })), result: null });
   try {
-    await openLab(id, { behind: o.behind, withheld: [loc.file] }, progress);
+    await openLab(id, { behind: o.behind, withheld: [loc.file], keep: SKILL_KEEPS }, progress);
     const d = dirs(id), r = readRun(id);
+    const tracker = installLocalTracker(project, r.copy);
+    writeRun(id, { tracker });
+    progress(`Tracker: local Markdown in .scratch/ (the lab's default; the project's own tracker file is ${tracker.project})`);
     // Outside the project copy, named after the skill: Pi reads SKILL.md and its support files from here.
     const staged = path.join(d.root, 'skill', o.name);
     const skillFiles = stageSkill(loc.dir, staged);
@@ -521,7 +583,7 @@ export async function startSkillLab(o = {}, progress = () => {}) {
     progress(`Staged the skill: ${skillFiles.copied.length} file${skillFiles.copied.length === 1 ? '' : 's'}${skillFiles.left.length ? `; left out ${skillFiles.left.join(', ')}` : ''}`);
 
     progress('Starting guest Main');
-    const mainArgv = ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`, need('pi'), ...skillMainFlags({ staged, model })];
+    const mainArgv = ['/usr/bin/env', ...paneEnv(id), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', `TMPDIR=${d.tmp}`, need('pi'), ...skillMainFlags({ staged, model, tools: spec.tools })];
     const space = appJson(id, ['do', 'space.new', JSON.stringify({ machine: '', name: `Lab · ${o.name}`, folder: r.copy, argv: mainArgv })], { timeout: 20000 });
     if (!space?.terminal) throw Error(`Herdr Lab did not confirm guest Main: ${JSON.stringify(space)}`);
     const main = space.terminal;
@@ -693,14 +755,16 @@ export const repliesSince = (items, from, pane) => items.slice(from).filter(i =>
  * which stay the lab's.
  */
 const userXdg = () => process.env.XDG_CONFIG_HOME ? [`XDG_CONFIG_HOME=${process.env.XDG_CONFIG_HOME}`] : ['-u', 'XDG_CONFIG_HOME'];
-const userShell = () => ['/usr/bin/env', ...userXdg(), process.env.SHELL || '/bin/zsh', '-l'];
+/** /usr/bin/env arguments for every program in a lab pane: your config folder back, and no GitHub or GitLab login. */
+export const paneEnv = id => [...userXdg(), ...UNSET_LOGINS.flatMap(k => ['-u', k]), ...Object.entries(noLoginEnv(id)).map(([k, v]) => `${k}=${v}`)];
+const userShell = id => ['/usr/bin/env', ...paneEnv(id), process.env.SHELL || '/bin/zsh', '-l'];
 
 /** The program a pane runs: a shell, or Pi with only the extensions that carry over (carriedExtensions). */
 function argvFor(id, program) {
   const r = readRun(id), d = dirs(id);
-  if (program === 'shell') return userShell();
+  if (program === 'shell') return userShell(id);
   if (program !== 'harness') throw Error('A pane runs "shell" or "harness"');
-  return ['/usr/bin/env', ...userXdg(), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'), '--no-extensions', ...r.tools.flatMap(t => ['-e', t.file]),
+  return ['/usr/bin/env', ...paneEnv(id), `PI_CODING_AGENT_DIR=${d.profile}`, 'PI_SKIP_VERSION_CHECK=1', need('pi'), '--no-extensions', ...r.tools.flatMap(t => ['-e', t.file]),
     '--no-skills', '--no-prompt-templates', '--no-themes', '--no-mcp', '--model', r.model];
 }
 

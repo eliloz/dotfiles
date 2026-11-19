@@ -18,6 +18,7 @@ For each expectation, in order, starting at 1:
    - `lab_do` also returns each guest pane's whole reply to this step, read from its session, above the end of the screen. A long reply's start scrolls off the screen, so judge from that whole reply and quote from it freely; it holds only what this step produced. Never fail for "scrolled off" when the whole reply is shown.
    - Use `absent` for things you checked are not there.
    - See and Absent lines are checked by the lab itself; your verdict cannot override them.
+   - Check lines are shell commands the lab runs in the project copy after the step; `lab_do` shows whether each passed. They are decided by the lab too. Judge your Expect and Never lines from the screen as usual, and never pass or fail an expectation because of a Check.
 
 After the last verdict, call `lab_finish` with a two-sentence summary. Then stop. Do not test anything the file does not ask for.
 

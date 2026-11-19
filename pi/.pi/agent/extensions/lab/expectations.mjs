@@ -4,7 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const KINDS = ['do', 'run', 'expect', 'never', 'see', 'absent'];
+export const KINDS = ['do', 'run', 'tools', 'expect', 'never', 'see', 'absent', 'check'];
+/** Pi's built-in tools a skill test may give guest Main with a Tools line. bash is never the default. */
+export const PI_TOOLS = ['read', 'grep', 'find', 'ls', 'write', 'edit', 'bash'];
 const BEFORE = /^(before|setup)$/i;
 export const NAME = /^[a-z][a-z0-9_-]{0,31}$/i;
 
@@ -13,6 +15,7 @@ export const FORMAT = `# <Sidecar> expectations
 ## Before
 Run: <optional: a shell command the lab runs in the project copy first, e.g. to plant a bug>
 Do (Main): <optional: a prompt Main gets before the sidecar opens>
+Tools (Main): <skill tests only, optional: guest Main's tools, e.g. read, grep, find, ls, write, edit (default read, grep, find, ls)>
 
 ## <Expectation title>
 Do (Main): <what to type in Main>
@@ -20,16 +23,17 @@ Do (Sidecar): <only when the check is about typing in the sidecar's own pane, e.
 Expect (Sidecar): <what must happen, judged from the screen>
 Never (Sidecar): <what must not happen>
 See (Main): "<exact text that must appear>"
-Absent (Main): "<exact text that must not appear>"`;
+Absent (Main): "<exact text that must not appear>"
+Check: <optional: a shell command the lab runs in the project copy after the step; exit 0 passes>`;
 
 const unquote = text => { const t = text.trim(), m = t.match(/^["“'‘](.*)["”'’]$/s); return m ? m[1] : t; };
 
 /**
- * Parse expectations Markdown into { title, before: [line], items: [{ id, title, lines: [line] }] },
- * where line = { kind, pane, text, line }. "(Sidecar)" means the sidecar under test. Throws with a line number.
+ * Parse expectations Markdown into { title, before: [line], tools, items: [{ id, title, lines: [line] }] },
+ * where line = { kind, pane, text, line } and tools is guest Main's tool list from a Tools line (undefined: the default). "(Sidecar)" means the sidecar under test. Throws with a line number.
  */
 export function parse(markdown, sidecar = 'Sidecar') {
-  const out = { title: '', before: [], items: [] };
+  const out = { title: '', before: [], tools: undefined, items: [] };
   let section = null, n = 0;
   for (const raw of String(markdown).split(/\r?\n/)) {
     n++;
@@ -45,12 +49,12 @@ export function parse(markdown, sidecar = 'Sidecar') {
       } else { const item = { id: out.items.length + 1, title, lines: [] }; out.items.push(item); section = item; }
       continue;
     }
-    const m = line.match(/^(Do|Run|Expect|Never|See|Absent)\s*(?:\(([^)]+)\))?\s*:\s*(.+)$/i);
+    const m = line.match(/^(Do|Run|Tools|Expect|Never|See|Absent|Check)\s*(?:\(([^)]+)\))?\s*:\s*(.+)$/i);
     if (!m) {
       // An indented line continues the line above it.
       if (section?.lines.length && /^\s/.test(raw)) { section.lines.at(-1).text += ' ' + line.trim(); continue; }
       if (!section) continue; // prose before the first heading is commentary
-      throw Error(`Line ${n}: start with Do, Run, Expect, Never, See or Absent, e.g. "Expect (${sidecar}): asks which homes it covers".`);
+      throw Error(`Line ${n}: start with Do, Run, Tools, Expect, Never, See, Absent or Check, e.g. "Expect (${sidecar}): asks which homes it covers".`);
     }
     if (!section) throw Error(`Line ${n}: put "${m[1]}" under a "## Title" heading.`);
     const kind = m[1].toLowerCase();
@@ -58,21 +62,35 @@ export function parse(markdown, sidecar = 'Sidecar') {
     if (/^sidecar$/i.test(pane) || pane.toLowerCase() === sidecar.toLowerCase()) pane = sidecar;
     else if (/^main$/i.test(pane)) pane = 'Main';
     // Any other pane name is kept; the lab notes it (extraPanes) and does not open it, like herdr-pi-lab.
-    if (section.setup && kind !== 'do' && kind !== 'run') throw Error(`Line ${n}: the Before section only holds Do and Run lines.`);
+    if (section.setup && !['do', 'run', 'tools'].includes(kind)) throw Error(`Line ${n}: the Before section only holds Do, Run and Tools lines.`);
     if (kind === 'run' && !section.setup) throw Error(`Line ${n}: Run lines belong under "## Before"; the lab runs them before the first prompt.`);
-    if (kind === 'run') { section.lines.push({ kind, pane: 'lab', text: m[3].trim(), line: n }); continue; }
+    if (kind === 'tools') {
+      if (!section.setup) throw Error(`Line ${n}: the Tools line belongs under "## Before"; it sets guest Main's tools for the whole lab run.`);
+      if (out.tools) throw Error(`Line ${n}: one Tools line per file.`);
+      if (m[2] && !/^main$/i.test(m[2].trim())) throw Error(`Line ${n}: Tools sets guest Main's tools: write "Tools (Main): …".`);
+      const tools = m[3].split(/[\s,]+/).map(t => t.trim().toLowerCase()).filter(Boolean);
+      const bad = tools.filter(t => !PI_TOOLS.includes(t));
+      if (bad.length) throw Error(`Line ${n}: ${bad.join(', ')} ${bad.length === 1 ? 'is not a tool' : 'are not tools'} guest Main can get. Use some of: ${PI_TOOLS.join(', ')}.`);
+      out.tools = [...new Set(tools)];
+      continue;
+    }
+    if (kind === 'run' || kind === 'check') {
+      if (m[2] && !/^lab$/i.test(m[2].trim())) throw Error(`Line ${n}: the lab runs ${m[1]} lines itself, in the project copy: write "${m[1]}: <command>".`);
+      section.lines.push({ kind, pane: 'lab', text: m[3].trim(), line: n }); continue;
+    }
     const text = kind === 'see' || kind === 'absent' ? unquote(m[3]) : m[3].trim();
     if (!text) throw Error(`Line ${n}: ${m[1]} needs text.`);
     section.lines.push({ kind, pane, text, line: n });
   }
-  if (!out.items.length) throw Error('No expectations yet. Add a "## Title" section with at least one Expect, Never, See or Absent line.');
-  for (const item of out.items) if (!item.lines.some(l => l.kind !== 'do')) throw Error(`"${item.title}" has no check. Add an Expect, Never, See or Absent line.`);
+  if (!out.items.length) throw Error('No expectations yet. Add a "## Title" section with at least one Expect, Never, See, Absent or Check line.');
+  for (const item of out.items) if (!item.lines.some(l => l.kind !== 'do')) throw Error(`"${item.title}" has no check. Add an Expect, Never, See, Absent or Check line.`);
   return out;
 }
 
 export const judged = item => item.lines.filter(l => l.kind === 'expect' || l.kind === 'never');
 export const observed = item => item.lines.filter(l => l.kind === 'see' || l.kind === 'absent');
 export const steps = item => item.lines.filter(l => l.kind === 'do');
+export const checks = item => item.lines.filter(l => l.kind === 'check');
 
 /** Panes named in the file other than Main and the sidecar: the lab does not open them, it says so. */
 export function extraPanes(spec, sidecar) {
@@ -161,9 +179,11 @@ export function testTarget(args, isFile) {
  * this expectation (its quotes must come from there: screen only, no transcript); `saw` maps a pane to
  * every screen the lab read during it (See/Absent are checked there). Throws, for the Tester to fix,
  * on a quote it was not shown, an "absent" claim that is on screen, or a pass without a quote.
- * Returns { verdict, observed: [{ kind, pane, text, ok }] }. See/Absent override the Tester's verdict.
+ * `ran` holds the results of this expectation's Check lines, [{ line, command, status, ok }], run by the lab after the
+ * step; a Check line with no result (never run) fails. Returns { verdict, observed: [{ kind, pane, text, ok }] }.
+ * See/Absent and Check override the Tester's verdict.
  */
-export function decide(item, p, given, saw) {
+export function decide(item, p, given, saw, ran = []) {
   const on = (pool, pane) => {
     const key = Object.keys(pool).find(k => k.toLowerCase() === String(pane).trim().toLowerCase());
     return key === undefined ? undefined : [].concat(pool[key]).join('\n');
@@ -174,6 +194,7 @@ export function decide(item, p, given, saw) {
   if (there.length) throw Error(`These ARE on screen: ${there.map(a => `${a.pane}: "${a.text}"`).join('; ')}. Re-check before claiming they are absent.`);
   if (judged(item).length && p.verdict === 'pass' && !(p.evidence || []).length) throw Error('A pass needs at least one quote from the screen.');
   const obs = observed(item).map(l => { const found = contains(on(saw, l.pane) || '', l.text); return { kind: l.kind, pane: l.pane, text: l.text, ok: l.kind === 'see' ? found : !found }; });
+  for (const l of checks(item)) { const r = ran.find(x => x.line === l.line); obs.push({ kind: 'check', pane: 'lab', text: l.text, ok: !!r?.ok, status: r ? r.status : 'not run' }); }
   const judgedOk = judged(item).length ? p.verdict === 'pass' : true;
   return { verdict: judgedOk && obs.every(o => o.ok) ? 'pass' : 'fail', observed: obs };
 }

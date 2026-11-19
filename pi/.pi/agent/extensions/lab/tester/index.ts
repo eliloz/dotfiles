@@ -109,9 +109,14 @@ export default function (pi: ExtensionAPI) {
 				if (reply) { add(rec.saw, k, reply); add(rec.given, k, reply); }
 				return (reply ? `--- ${k}: its whole reply to this step ---\n${reply}\n\n` : "") + `--- ${k}: end of screen ---\n${shown || "(blank)"}`;
 			});
+			// Check lines: shell commands the lab runs in the project copy now that the step settled. Their result is decided
+			// by the lab; the Tester sees the exit status, never the output (it stays in the report).
+			rec.checks = core.runChecks(id, it);
 			save(id, results);
-			const checks = it.lines.filter((l: any) => l.kind !== "do").map((l: any) => `${l.kind[0].toUpperCase() + l.kind.slice(1)} (${l.pane}): ${l.text}`);
-			return text(`${it.id} · ${it.title}\n${log.join("\n") || "no steps; screens as they are"}\n\nCheck:\n${checks.join("\n")}\n\n${screens.join("\n\n")}`,
+			const lines = it.lines.filter((l: any) => l.kind !== "do" && l.kind !== "check").map((l: any) => `${l.kind[0].toUpperCase() + l.kind.slice(1)} (${l.pane}): ${l.text}`);
+			const ran = rec.checks.map((c: any) => `${c.ok ? "✓" : "✗"} Check: ${c.command}  (exit ${c.status})`);
+			const body = [lines.length ? `Lines to judge:\n${lines.join("\n")}` : "", ran.length ? `Checks the lab ran in the project copy (decided by the lab, not you):\n${ran.join("\n")}` : ""].filter(Boolean).join("\n\n");
+			return text(`${it.id} · ${it.title}\n${log.join("\n") || "no steps; screens as they are"}\n\n${body}\n\n${screens.join("\n\n")}`,
 				`${it.id} · ${it.title}: ${log.length ? log.join(" · ") : "checking the screens"}`);
 		},
 	});
@@ -157,7 +162,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "lab_verdict",
 		label: "Lab · verdict",
-		description: "Record pass or fail for one expectation, with verbatim quotes from the screens you were shown as evidence. A quote you were not shown on that pane is rejected. See/Absent lines are checked by the lab and override the verdict.",
+		description: "Record pass or fail for one expectation, with verbatim quotes from the screens you were shown as evidence. A quote you were not shown on that pane is rejected. See/Absent and Check lines are checked by the lab and override the verdict.",
 		parameters: Type.Object({
 			expectation: Type.Integer({ minimum: 1 }),
 			verdict: Type.Union([Type.Literal("pass"), Type.Literal("fail")]),
@@ -172,10 +177,10 @@ export default function (pi: ExtensionAPI) {
 			const rec = results.items.find((x: any) => x.id === it.id);
 			if (!rec.given) throw Error(`Call lab_do ${it.id} first: it runs the steps and shows you the screens.`);
 			for (const [k, t] of guests(run)) add(rec.saw, k, core.screen(id, t));
-			const d = decide(it, p, rec.given, rec.saw);
+			const d = decide(it, p, rec.given, rec.saw, rec.checks || []);
 			Object.assign(rec, { verdict: d.verdict, running: false, tester: p.verdict, reason: p.reason, evidence: p.evidence, absent: p.absent || [], observed: d.observed, at: new Date().toISOString() });
 			save(id, results);
-			const note = d.observed.length ? "\nLab checks: " + d.observed.map((o: any) => `${o.ok ? "✓" : "✗"} ${o.kind} (${o.pane}) "${o.text}"`).join("; ") : "";
+			const note = d.observed.length ? "\nLab checks: " + d.observed.map((o: any) => o.kind === "check" ? `${o.ok ? "✓" : "✗"} check "${o.text}" (exit ${o.status})` : `${o.ok ? "✓" : "✗"} ${o.kind} (${o.pane}) "${o.text}"`).join("; ") : "";
 			const line = `${MARK[d.verdict]} ${it.id} · ${it.title}: ${d.verdict}${d.verdict !== p.verdict ? " (the lab's own checks overrode your verdict)" : ""}`;
 			return text(line + note, `${line} · ${p.reason}`);
 		},
