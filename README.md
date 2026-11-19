@@ -8,6 +8,7 @@ Other docs:
 - `docs/python.md`: how uv, venvs and site-packages work
 - `nvim/.config/nvim/README.md`: Neovim config layout and plugins
 - `scripts/README.md`: the `dev` and `box` scripts (tmux sessions; Claude in sbx sandboxes)
+- `agents/README.md`: working with coding agents: the flow's skills, testing them in the lab, sidecars, onboarding a project
 
 ---
 
