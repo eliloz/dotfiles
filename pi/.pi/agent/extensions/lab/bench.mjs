@@ -147,8 +147,23 @@ function judge({ prompt, model, runDir }) {
   return parseVerdicts(r.stdout);
 }
 
-/** Every item's verdict, by the lab's own rule: Checks decide, and a judged pass needs a real quote. */
+/**
+ * The stage's output as the text a quote is checked against: every string in the JSON, unescaped, one per line.
+ * The judge quotes a finding as it reads it; in the raw JSON its quotes and line breaks are escaped (\" and \n),
+ * and fold() would keep the n of \n, so a faithful quote would not match. Output that is not JSON is used as it is.
+ */
+export function quotable(output) {
+  let value;
+  try { value = JSON.parse(output); } catch { return String(output || ''); }
+  const out = [];
+  const walk = v => { if (typeof v === 'string') out.push(v); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+  walk(value);
+  return out.join('\n');
+}
+
+/** Every item's verdict, by the lab's own rule: Checks decide, and a judged pass needs a quote that is in the output. */
 export function verdicts(items, ran, said, output) {
+  output = quotable(output);
   return items.map(item => {
     const v = said.find(x => Number(x.id) === item.id);
     const p = judged(item).length ? { verdict: v?.verdict === 'pass' ? 'pass' : 'fail', evidence: v?.quote ? [{ pane: 'Review', quote: v.quote }] : [] } : { verdict: 'pass' };

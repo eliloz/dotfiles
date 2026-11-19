@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parse } from '../expectations.mjs';
-import { fill, caseBranch, checkScript, judgePrompt, parseVerdicts, verdicts, locateCase, BENCH } from '../bench.mjs';
+import { fill, caseBranch, checkScript, judgePrompt, parseVerdicts, verdicts, quotable, locateCase, BENCH } from '../bench.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'bench-'));
 const git = (cwd, ...a) => { const r = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd, encoding: 'utf8' }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
@@ -93,4 +93,14 @@ test('locateCase finds stage.json and cases, and names what is missing', () => {
   fs.writeFileSync(path.join(d, BENCH, 'review', 'clean', 'expectations.md'), md);
   assert.deepEqual(locateCase(d, 'review').cases, ['clean']);
   assert.throws(() => locateCase(d, 'review', 'nope'), /No case "nope".*Cases: clean/);
+});
+
+test('a quote of a finding as read matches, though the JSON escapes its quotes and line breaks', () => {
+  const items = parse('# c\n## Names it\nExpect: a finding names the bug', 'Review').items;
+  const output = JSON.stringify({ findings: [{ title: 'T', body: 'Spec: "Decided requests show no waiting time."\n\nSo they show "Waiting 12 days".' }] });
+  assert.equal(quotable(output).split('\n')[0], 'T');
+  const quote = 'Spec: "Decided requests show no waiting time."\n\nSo they show "Waiting 12 days".';
+  assert.equal(verdicts(items, [], [{ id: 1, verdict: 'pass', quote }], output)[0].verdict, 'pass');
+  assert.equal(verdicts(items, [], [{ id: 1, verdict: 'pass', quote: 'nothing like it' }], output)[0].verdict, 'fail');
+  assert.equal(quotable('not json'), 'not json');
 });
