@@ -4,8 +4,6 @@ How I work with coding agents on this Mac: the skills I use in every project, th
 
 Words follow [GLOSSARY.md](GLOSSARY.md), in this folder: **Main**, **skill**, **sidecar**, **lab**, **expectation**, **baseline**, **Check**, **Tester**.
 
-> **Status (2026-11-19):** built, and proven with the lab's unit tests and `lab selftest`. One thing is left, for me to do by hand: the course project (`~/code/ai/crash-course/cohort-005-project`) and `~/code/ai/software-factories` still hold their old copies of the twelve skills in `.agents/skills/`. Until those are deleted, the project copies shadow the ones here in those two folders (same text today). Delete this note when they are gone.
-
 ## The pieces
 
 | Piece | What it is | Where it lives |
