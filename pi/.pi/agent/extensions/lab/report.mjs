@@ -1,5 +1,5 @@
 // The report of a sidecar or skill test: Markdown in <run.folder>/reports/ of the real project
-// (sidecars/<name>/ or .agents/skills/<name>/), plus a screenshot of the
+// (sidecars/<name>/ or .agents/skill-tests/<name>/), plus a screenshot of the
 // lab window. Adapted from herdr-pi-lab's report.mjs (0.5.0). Every quote in it was checked against a
 // screen the Tester was shown; "What each pane showed" comes from the panes' Pi sessions (transcript()).
 import fs from 'node:fs';
@@ -21,12 +21,13 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
     `**${headline(results)}** · ${when.toLocaleString()} · run \`${id}\``, '',
     summary, '',
     skill
-      ? `Skill: guest Main started with \`--no-skills --skill <staged copy of ${run.folder}/>\` (${files.length} file${files.length === 1 ? '' : 's'}: ${files.join(', ') || 'none'})`
+      ? `Skill: guest Main started with \`--no-skills --skill <staged copy>\` (${files.length} file${files.length === 1 ? '' : 's'}: ${files.join(', ') || 'none'})`
       : `Sidecar: \`/sidecar ${run.work ? '--work ' : ''}${run.sidecar} --model ${run.sidecarModel} <Instructions from ${run.folder}/sidecar.md, ${run.instructionsChars} characters>\`${run.instructionsArrived ? ' · instructions arrived whole' : ''}`,
     skill
       ? `Models: Main \`${run.model}\` · Tester \`${run.testerModel}\``
       : `Models: Main \`${run.model}\` · ${run.sidecar} \`${run.sidecarModel}\` · Tester \`${run.testerModel}\``,
     ...(skill ? [
+      `Skill text: ${core.originText(run.origin)}`,
       `Main's tools: \`${run.mainTools || 'read,grep,find,ls'}\`${/(^|,)bash(,|$)/.test(run.mainTools || '') ? ' (bash: Main could run commands; the lab gives it no GitHub or GitLab login)' : ''}`,
       `Tracker: local Markdown in \`.scratch/\` (the lab's default)${run.tracker ? `; the project's own tracker file is ${run.tracker.project}` : ''}`,
     ] : []),
@@ -51,7 +52,7 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
   return lines.join('\n');
 }
 
-/** Write the report (and a window screenshot) into sidecars/<name>/reports/ of the real project. */
+/** Write the report (and a window screenshot) into <run.folder>/reports/ of the real project. */
 export function writeReport(id, { summary }) {
   const run = core.readRun(id), results = core.readResults(id);
   const dir = run.reportsDir || path.join(run.project, run.folder, 'reports');

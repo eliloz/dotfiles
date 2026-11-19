@@ -20,11 +20,13 @@ Sidecars (sidecars/<name>/: sidecar.md, expectations.md, reports/)
   ${p} report <Sidecar>           The sidecar's latest report
   ${p} sidecars                   Sidecars here with expectations
 
-Skills (.agents/skills/<name>/: SKILL.md, expectations.md, reports/)
+Skills (tests: .agents/skill-tests/<name>/ here, with expectations.md, BASELINE.md, reports/;
+        text: .agents/skills/<name>/ here if it has a SKILL.md, else ~/.agents/skills/<name>/)
   ${p} test skill <name>          Guest Main (read-only tools) starts with only that skill (--no-skills
-                               --skill <a staged copy without expectations, BASELINE.md or reports>);
-                               a black-box Tester to its right types each Do line into Main and judges
-                               from Main's screen alone. The project copy holds no .agents/ folder.
+                               --skill <a staged copy>); a black-box Tester to its right types each Do
+                               line into Main and judges from Main's screen alone. The project copy holds
+                               no .agents/ folder. The report names the copy tested: its real path, its
+                               repository's commit and a hash of SKILL.md.
   ${p} selftest                   The lab's own check: the skill test of echo-twice (kept in the lab's folder,
                                never in a project) in a copy of this project; waits, then stops the lab.
                                A failure means the lab is broken. Reports: ~/.lab/reports/selftest/
@@ -61,7 +63,7 @@ Options for test
                        expectation passed. One pass says little about a sidecar on a small model
   --seconds N          Give up after N seconds (default 900)` : ''}
 
-Expectations: sidecars/<name>/expectations.md or .agents/skills/<name>/expectations.md. In a skill
+Expectations: sidecars/<name>/expectations.md or .agents/skill-tests/<name>/expectations.md. In a skill
 test a line without a pane means Main. Do lines are typed exactly; Expect/Never are judged by the
 Tester from quoted screen text (a quote that was not on a screen it was shown is rejected); See/Absent
 are checked by the lab itself and override the Tester.

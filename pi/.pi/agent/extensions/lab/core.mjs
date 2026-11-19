@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { parse, locate, locateSkill, instructions, access, extraPanes, checks } from './expectations.mjs';
 
@@ -527,7 +527,30 @@ export const SELFTEST_SKILL = 'echo-twice';
 export const SELFTEST_REPORTS = path.join(REPORTS, 'selftest');
 export function selftestSkill(dir = path.join(HERE, 'selftest', SELFTEST_SKILL)) {
   const file = path.join(dir, 'expectations.md'), skillFile = path.join(dir, 'SKILL.md');
-  return { dir, file, skillFile, folder: `lab selftest (${dir})`, missing: !fs.existsSync(file), noSkill: !fs.existsSync(skillFile) };
+  return { dir, file, skillFile, source: 'selftest', folder: `lab selftest (${dir})`, missing: !fs.existsSync(file), noSkill: !fs.existsSync(skillFile) };
+}
+
+/**
+ * Which copy of a skill a lab run tests, for the report and for BASELINE.md: the real folder of its text, whether that is
+ * the project's own copy or the global one, the repository holding it with its commit (and whether the skill folder has
+ * uncommitted changes), and the first 12 hex digits of SKILL.md's SHA-256 (`shasum -a 256 SKILL.md | cut -c1-12`).
+ * The hash is what says "the same text" when a skill moves between repositories unchanged.
+ */
+export function skillOrigin(loc) {
+  const git = (...a) => { const r = spawnSync('git', ['-C', loc.dir, ...a], { encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : undefined; };
+  const repo = git('rev-parse', '--show-toplevel');
+  return {
+    source: loc.source, path: loc.dir,
+    hash: createHash('sha256').update(fs.readFileSync(loc.skillFile)).digest('hex').slice(0, 12),
+    ...(repo ? { repo, commit: git('rev-parse', '--short', 'HEAD') || 'no commit yet', dirty: Boolean(git('status', '--porcelain', '--', '.')) } : {}),
+  };
+}
+/** One line for the report and the terminal: "global copy `…` · repository `…` at `abc1234` · SKILL.md sha256 `…`". */
+export function originText(o) {
+  if (!o) return 'unknown';
+  const which = o.source === 'project' ? "the project's own copy" : o.source === 'global' ? 'the global copy' : "the lab's self-test copy";
+  const where = o.repo ? `repository \`${o.repo}\` at \`${o.commit}\`${o.dirty ? ', with uncommitted changes in the skill folder' : ''}` : 'not in a git repository';
+  return `${which}, \`${o.path}\` · ${where} · SKILL.md sha256 \`${o.hash}\``;
 }
 
 /** Files a skill test keeps although the agent rule leaves them out: the project's instructions, which Pi loads by itself. */
@@ -561,8 +584,9 @@ export function installLocalTracker(project, copy, template = LOCAL_TRACKER) {
 }
 
 /**
- * Start a lab for .agents/skills/<name>/: copy the project (no .agents/, no expectations, no baseline), stage the
- * skill outside the copy without its expectations, baseline or reports, open guest Main with only that skill
+ * Start a lab for one skill: its tests come from the project's .agents/skill-tests/<name>/, its text from the project's
+ * .agents/skills/<name>/ if present, else from ~/.agents/skills/<name>/ (locateSkill). Copy the project (no .agents/,
+ * no expectations, no baseline), stage the skill outside the copy, open guest Main with only that skill
  * (--no-skills --skill <staged>, read-only tools, no extensions), run the Before lines, then open the Tester
  * to the right of Main. Returns the run id.
  */
@@ -570,15 +594,17 @@ export async function startSkillLab(o = {}, progress = () => {}) {
   if (process.platform !== 'darwin') throw Error('The lab is built for macOS (it copies and signs Herdr.app)');
   const project = path.resolve(o.project || process.cwd());
   const loc = o.selftest ? selftestSkill() : locateSkill(project, o.name);
-  if (loc.noSkill) throw Error(`No skill called ${o.name}: ${path.relative(project, loc.skillFile)} does not exist.`);
-  if (loc.missing) throw Error(`No expectations for the ${o.name} skill yet. Write ${path.relative(project, loc.file)} first.`);
+  if (loc.missing) throw Error(`No expectations for the ${o.name} skill yet. Write ${path.relative(project, loc.file)} first.`
+    + (loc.oldFile && fs.existsSync(loc.oldFile) ? ` (${path.relative(project, loc.oldFile)} is the old place: move it, with BASELINE.md and reports/, to ${loc.folder}/.)` : ''));
+  if (loc.noSkill) throw Error(`No skill called ${o.name}: neither ${(loc.looked || [loc.skillFile]).map(f => f.startsWith(project + path.sep) ? path.relative(project, f) : f.replace(os.homedir(), '~')).join(' nor ')} exists.`);
+  const origin = skillOrigin(loc);
   const spec = parse(fs.readFileSync(loc.file, 'utf8'), 'Main');
   const model = o.model || defaultModel();
   if (!model) throw Error('No model given and no default model in your Pi settings. Pass --model provider/id');
   need('hc'); need('herdr-app'); need('pi');
 
   const mainTools = spec.tools?.length ? spec.tools.join(',') : MAIN_TOOLS;
-  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [], mainTools, ...(o.selftest ? { selftest: true, reportsDir: SELFTEST_REPORTS } : {}) });
+  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, origin, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [], mainTools, ...(o.selftest ? { selftest: true, reportsDir: SELFTEST_REPORTS } : {}) });
   o.onId?.(id);
   fs.copyFileSync(loc.file, dirs(id).expectations);
   writeResults(id, { items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })), result: null });
@@ -592,6 +618,7 @@ export async function startSkillLab(o = {}, progress = () => {}) {
     const staged = path.join(d.root, 'skill', o.name);
     const skillFiles = stageSkill(loc.dir, staged);
     writeRun(id, { staged, skillFiles });
+    progress(`Skill text: ${originText(origin).replace(/\`/g, '')}`);
     progress(`Staged the skill: ${skillFiles.copied.length} file${skillFiles.copied.length === 1 ? '' : 's'}${skillFiles.left.length ? `; left out ${skillFiles.left.join(', ')}` : ''}`);
 
     progress('Starting guest Main');

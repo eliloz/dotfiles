@@ -115,7 +115,7 @@ test('no lab process has a GitHub or GitLab login: tokens removed, gh and glab r
 });
 
 test('a skill report names Main\'s tools and the tracker, and shows a failed Check\'s output', () => {
-  const run = { kind: 'skill', skill: 'to-tickets', folder: '.agents/skills/to-tickets', model: 'p/m', testerModel: 'p/t', skillFiles: { copied: ['SKILL.md'] }, mainTools: 'read,write', tracker: { project: 'the same' } };
+  const run = { kind: 'skill', skill: 'to-tickets', folder: '.agents/skill-tests/to-tickets', model: 'p/m', testerModel: 'p/t', skillFiles: { copied: ['SKILL.md'] }, mainTools: 'read,write', tracker: { project: 'the same' } };
   const results = { items: [{ id: 1, title: 'Waits', verdict: 'fail', reason: 'r', observed: [{ kind: 'check', pane: 'lab', text: 'test -z "$(ls x)"', ok: false, status: 1 }], checks: [{ command: 'test -z "$(ls x)"', status: 1, ok: false, output: '01-a.md' }] }] };
   const md = reportText({ run, results, summary: 's', screens: {}, id: 'lab-abc123' });
   assert.match(md, /Main's tools: `read,write`/);

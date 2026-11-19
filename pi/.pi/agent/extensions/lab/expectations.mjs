@@ -2,6 +2,7 @@
 // Parsing, the lab's own See/Absent checks and quote matching are deterministic; only Expect and
 // Never lines need the Tester's judgment. Adapted from herdr-pi-lab's expectations.mjs (0.5.0).
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const KINDS = ['do', 'run', 'tools', 'expect', 'never', 'see', 'absent', 'check'];
@@ -130,14 +131,26 @@ export function locate(project, name) {
   return { dir, file, sidecarFile: path.join(dir, 'sidecar.md'), folder: `sidecars/${name.toLowerCase()}`, missing: !fs.existsSync(file) };
 }
 
-/** Where a skill under test lives: .agents/skills/<name>/, with its SKILL.md and expectations.md. */
+/**
+ * Where a skill test finds its two halves, from a project's root:
+ *   the tests      .agents/skill-tests/<name>/ in the project (expectations.md, BASELINE.md, reports/)
+ *   the skill text .agents/skills/<name>/ in the project if it has a SKILL.md, else ~/.agents/skills/<name>/
+ * `dir` is the skill text's real folder: stow links ~/.agents/skills/<name>/SKILL.md file by file, and staging copies
+ * regular files only, so the link is followed to the folder that holds the text. `source` says which copy: "project" or "global".
+ */
 export const SKILLS = '.agents/skills';
-export function locateSkill(project, name) {
-  if (!name) throw Error('Name the skill: lab test skill <name>, its folder in .agents/skills/.');
+export const SKILL_TESTS = '.agents/skill-tests';
+export function locateSkill(project, name, home = os.homedir()) {
+  if (!name) throw Error('Name the skill: lab test skill <name>, its folder in .agents/skills/ here or in ~/.agents/skills/.');
   if (!NAME.test(String(name))) throw Error(`"${name}" is not a skill name. Use the skill's folder name, such as grilling.`);
-  const folder = `${SKILLS}/${name}`, dir = path.join(project, SKILLS, name);
-  const file = path.join(dir, 'expectations.md'), skillFile = path.join(dir, 'SKILL.md');
-  return { dir, file, skillFile, folder, missing: !fs.existsSync(file), noSkill: !fs.existsSync(skillFile) };
+  const folder = `${SKILL_TESTS}/${name}`, tests = path.join(project, SKILL_TESTS, name);
+  const file = path.join(tests, 'expectations.md');
+  const own = path.join(project, SKILLS, name, 'SKILL.md'), global = path.join(home, SKILLS, name, 'SKILL.md');
+  const source = fs.existsSync(own) ? 'project' : 'global';
+  const found = source === 'project' ? own : global, noSkill = !fs.existsSync(found);
+  const skillFile = noSkill ? found : fs.realpathSync(found);
+  return { dir: path.dirname(skillFile), skillFile, source, tests, file, folder, missing: !fs.existsSync(file), noSkill,
+    looked: [own, global], oldFile: path.join(project, SKILLS, name, 'expectations.md') };
 }
 
 /**

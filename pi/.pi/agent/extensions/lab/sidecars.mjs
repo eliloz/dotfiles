@@ -21,8 +21,8 @@ export function projectSidecars(project) {
 const newestIn = dir => { const f = fs.existsSync(dir) ? fs.readdirSync(dir).filter(x => x.endsWith('.md')).sort().at(-1) : undefined; return f && path.join(dir, f); };
 /** The newest report in sidecars/<name>/reports/, or undefined. */
 export const latestReport = (project, name) => newestIn(path.join(locate(project, name).dir, 'reports'));
-/** The newest report in .agents/skills/<name>/reports/, or undefined. */
-export const latestSkillReport = (project, name) => newestIn(path.join(locateSkill(project, name).dir, 'reports'));
+/** The newest report in .agents/skill-tests/<name>/reports/, or undefined. */
+export const latestSkillReport = (project, name) => newestIn(path.join(locateSkill(project, name).tests, 'reports'));
 
 /** What /lab report shows in the conversation: the report up to "What each pane showed", without the image line. */
 export const reportExcerpt = text => text.split('## What each pane showed')[0].replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').trimEnd();

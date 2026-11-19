@@ -127,7 +127,7 @@ async function labCmd(o, t) {
   console.log([`Lab ${id} for ${label}: ${r.phase === 'testing' ? 'the Tester is running' : 'open up to the Tester (not built yet)'}`,
     `Panes: ${core.panes(id).map(p => `${p.name} (${p.terminal})`).join(', ')}`,
     ...(skill
-      ? [`Models: Main ${r.model} · Tester ${r.testerModel}`, `Skill staged for Main: ${r.skillFiles.copied.join(', ')}`,
+      ? [`Models: Main ${r.model} · Tester ${r.testerModel}`, `Skill text: ${core.originText(r.origin).replace(/\`/g, '')}`, `Skill staged for Main: ${r.skillFiles.copied.join(', ')}`,
         `Main's tools: ${r.mainTools}${/(^|,)bash(,|$)/.test(r.mainTools) ? '  ⚠ bash: Main can run commands (no GitHub or GitLab login in the lab, but anything else on this Mac)' : ''}`,
         `Tracker: local Markdown in .scratch/ (lab default; the project's own tracker file is ${r.tracker?.project})`]
       : [`Models: Main ${r.model} · ${r.sidecar} ${r.sidecarModel} · Tester ${r.testerModel}`,
