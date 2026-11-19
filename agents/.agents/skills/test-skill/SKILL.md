@@ -1,7 +1,6 @@
 ---
 name: test-skill
-description: Measure a project skill in the lab against its expectations - write them, baseline it, measure a change, or rerun stale baselines.
-disable-model-invocation: true
+description: Lab testing of a project's skills against their expectations and baselines. Use when adding, changing or testing a skill in .agents/skills/, when a skill misbehaves, or after pulling skill updates.
 ---
 
 # Test skill
