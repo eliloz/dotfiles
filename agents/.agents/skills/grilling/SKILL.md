@@ -21,7 +21,7 @@ Format a round like so:
 ➡️ <your recommended answer>
 ```
 
-Word each question so "yes" accepts your recommended answer.
+Word each question so "yes" accepts your recommended answer. Never recommend "no": flip the question instead. When you offer options, end the question by naming your pick, such as "Should we go with (a)?".
 
 Each round the user answers reshapes the tree: settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
 
