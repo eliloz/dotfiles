@@ -30,7 +30,7 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
       `Main's tools: \`${run.mainTools || 'read,grep,find,ls'}\`${/(^|,)bash(,|$)/.test(run.mainTools || '') ? ' (bash: Main could run commands; the lab gives it no GitHub or GitLab login)' : ''}`,
       `Tracker: local Markdown in \`.scratch/\` (the lab's default)${run.tracker ? `; the project's own tracker file is ${run.tracker.project}` : ''}`,
     ] : []),
-    `Expectations: \`${run.folder}/expectations.md\``, '',
+    `Expectations: \`${run.selftest ? run.expectations : `${run.folder}/expectations.md`}\``, '',
   ];
   for (const i of results.items) {
     lines.push(`## ${i.verdict === 'pass' ? '✓' : '✗'} ${i.id} · ${i.title}`, '', i.reason || '(no reason given)', '');
@@ -54,7 +54,7 @@ export function reportText({ run, results, summary, screens, shot, when = new Da
 /** Write the report (and a window screenshot) into sidecars/<name>/reports/ of the real project. */
 export function writeReport(id, { summary }) {
   const run = core.readRun(id), results = core.readResults(id);
-  const dir = path.join(run.project, run.folder, 'reports');
+  const dir = run.reportsDir || path.join(run.project, run.folder, 'reports');
   fs.mkdirSync(dir, { recursive: true });
   const when = new Date(), base = path.join(dir, `${stamp(when)}-${id}`);
   let shot = `${base}.png`;

@@ -120,7 +120,7 @@ async function labCmd(o, t) {
   const onId = lab => { onSignal(lab); progress(`run ${lab}`); };
   const skill = t.kind === 'skill';
   const id = skill
-    ? await core.startSkillLab({ name: t.name, model: o.model, testerModel: o.testerModel, behind: o.behind, onId }, progress)
+    ? await core.startSkillLab({ name: t.name, selftest: t.selftest, model: o.model, testerModel: o.testerModel, behind: o.behind, onId }, progress)
     : await core.startSidecarLab({ name: t.name, model: o.model, sidecarModel: o.sidecarModel, testerModel: o.testerModel, behind: o.behind, onId }, progress);
   const r = core.readRun(id);
   const label = skill ? `skill ${r.skill}` : r.sidecar;
@@ -206,6 +206,12 @@ async function main(argv) {
   switch (cmd) {
     case 'doctor': { const d = core.doctor(process.cwd()); console.log(o.json ? JSON.stringify(d, null, 2) : d.text); return d.ok ? 0 : 1; }
     case 'test': case 'run': return testCmd(o);
+    case 'selftest': {
+      // The lab's own check: echo-twice from the lab's folder, run in a copy of this project. Always waits.
+      if (o._.length) throw Error('lab selftest takes no name: it always runs the lab\'s own echo-twice');
+      const t = { kind: 'skill', name: core.SELFTEST_SKILL, selftest: true };
+      return o.runs > 1 ? labRuns(o, t) : (await labCmd({ ...o, wait: true }, t)).code;
+    }
     case 'scenarios': { const f = o._[0]; if (!f) throw Error('lab scenarios FILE'); console.log(JSON.stringify(core.parseScenarios(fs.readFileSync(f, 'utf8')), null, 2)); return 0; }
     case 'start': { const id = await core.startLab({ model: o.model, behind: o.behind, onId: stopOnSignal({}) }, progress); console.log(id); return 0; }
     case 'open': console.log(await core.openPane(runOf(o), o._[0] || 'shell')); return 0;

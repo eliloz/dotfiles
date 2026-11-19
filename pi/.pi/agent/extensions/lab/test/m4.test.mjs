@@ -123,3 +123,17 @@ test('a skill report names Main\'s tools and the tracker, and shows a failed Che
   assert.match(md, /Lab check ✗ `test -z "\$\(ls x\)"` exited 1/);
   assert.match(md, /01-a\.md/);
 });
+
+test('lab selftest: echo-twice lives in the lab\'s own folder, with Checks, and reports outside any project', async () => {
+  const { selftestSkill, SELFTEST_REPORTS, REPORTS } = await import('../core.mjs');
+  const l = selftestSkill();
+  assert.equal(l.noSkill, false);
+  assert.equal(l.missing, false);
+  assert.ok(l.dir.endsWith(path.join('lab', 'selftest', 'echo-twice')));
+  assert.equal(SELFTEST_REPORTS, path.join(REPORTS, 'selftest'));
+  const s = parse(fs.readFileSync(l.file, 'utf8'), 'Main');
+  assert.equal(s.items.length, 1);
+  assert.deepEqual(checks(s.items[0]).map(c => c.text), ['grep -q "local Markdown files under" AGENTS.md && grep -q "Local Markdown" docs/agents/issue-tracker.md', '! gh auth status']);
+  const md = reportText({ run: { kind: 'skill', skill: 'echo-twice', selftest: true, folder: l.folder, expectations: l.file, model: 'p/m', testerModel: 'p/t', skillFiles: { copied: ['SKILL.md'] } }, results: { items: [] }, summary: 's', screens: {}, id: 'lab-abc123' });
+  assert.ok(md.includes(`Expectations: \`${l.file}\``));
+});

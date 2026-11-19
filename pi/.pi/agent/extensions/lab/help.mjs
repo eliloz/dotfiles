@@ -25,6 +25,9 @@ Skills (.agents/skills/<name>/: SKILL.md, expectations.md, reports/)
                                --skill <a staged copy without expectations, BASELINE.md or reports>);
                                a black-box Tester to its right types each Do line into Main and judges
                                from Main's screen alone. The project copy holds no .agents/ folder.
+  ${p} selftest                   The lab's own check: the skill test of echo-twice (kept in the lab's folder,
+                               never in a project) in a copy of this project; waits, then stops the lab.
+                               A failure means the lab is broken. Reports: ~/.lab/reports/selftest/
   ${p} report skill <name>        The skill's latest report
 
 Scenarios (lab-scenarios.md)

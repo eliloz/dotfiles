@@ -518,6 +518,18 @@ export function stageSkill(src, dest) {
 export const skillMainFlags = ({ staged, model, tools }) => ['--no-extensions', '--tools', tools?.length ? tools.join(',') : MAIN_TOOLS,
   '--no-skills', '--skill', staged, '--no-prompt-templates', '--no-themes', '--no-mcp', '--name', 'Main', '--model', model];
 
+/**
+ * `lab selftest`: the skill test of echo-twice, a skill kept in the lab's own folder (selftest/echo-twice/), never in a
+ * project, so it never shows up in daily sessions. Any git project serves as the copy; the skill ignores it. Reports go
+ * to ~/.lab/reports/selftest/. A failure here means the lab is broken, not a skill.
+ */
+export const SELFTEST_SKILL = 'echo-twice';
+export const SELFTEST_REPORTS = path.join(REPORTS, 'selftest');
+export function selftestSkill(dir = path.join(HERE, 'selftest', SELFTEST_SKILL)) {
+  const file = path.join(dir, 'expectations.md'), skillFile = path.join(dir, 'SKILL.md');
+  return { dir, file, skillFile, folder: `lab selftest (${dir})`, missing: !fs.existsSync(file), noSkill: !fs.existsSync(skillFile) };
+}
+
 /** Files a skill test keeps although the agent rule leaves them out: the project's instructions, which Pi loads by itself. */
 export const SKILL_KEEPS = ['AGENTS.md', 'CLAUDE.md'];
 export const TRACKER_FILE = 'docs/agents/issue-tracker.md';
@@ -557,7 +569,7 @@ export function installLocalTracker(project, copy, template = LOCAL_TRACKER) {
 export async function startSkillLab(o = {}, progress = () => {}) {
   if (process.platform !== 'darwin') throw Error('The lab is built for macOS (it copies and signs Herdr.app)');
   const project = path.resolve(o.project || process.cwd());
-  const loc = locateSkill(project, o.name);
+  const loc = o.selftest ? selftestSkill() : locateSkill(project, o.name);
   if (loc.noSkill) throw Error(`No skill called ${o.name}: ${path.relative(project, loc.skillFile)} does not exist.`);
   if (loc.missing) throw Error(`No expectations for the ${o.name} skill yet. Write ${path.relative(project, loc.file)} first.`);
   const spec = parse(fs.readFileSync(loc.file, 'utf8'), 'Main');
@@ -566,7 +578,7 @@ export async function startSkillLab(o = {}, progress = () => {}) {
   need('hc'); need('herdr-app'); need('pi');
 
   const mainTools = spec.tools?.length ? spec.tools.join(',') : MAIN_TOOLS;
-  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [], mainTools });
+  const id = newLab(project, { kind: 'skill', skill: o.name, folder: loc.folder, expectations: loc.file, model, testerModel: o.testerModel || model, tools: [], mainTools, ...(o.selftest ? { selftest: true, reportsDir: SELFTEST_REPORTS } : {}) });
   o.onId?.(id);
   fs.copyFileSync(loc.file, dirs(id).expectations);
   writeResults(id, { items: spec.items.map(i => ({ id: i.id, title: i.title, verdict: null })), result: null });
