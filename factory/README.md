@@ -46,7 +46,7 @@ Start here when you don't know where to begin. The project is already set up (se
 | What went wrong | Do |
 |---|---|
 | A skill at the keyboard misbehaved (grill, spec, tickets) | `/test-skill <name> <the complaint>` (`agents/README.md`) |
-| A factory run failed (no commit, a Check failing) | Read its log in `.sandcastle/logs/`. Rerun once; if it fails again, the ticket is probably too big or unclear: split or rewrite it |
+| A factory run failed (no commit, a Check failing) | Read what it printed (a review also writes its log to `.sandcastle/logs/`). Rerun once; if it fails again, the ticket is probably too big or unclear: split or rewrite it |
 | The implementer or reviewer did the wrong thing, again | Turn it into a bench case in the project, then change the prompt here (see "Testing the factory") |
 
 ## Layout
@@ -61,8 +61,8 @@ factory/
   src/
     cli.ts                   # the `factory` command
     agent.ts                 # the one place that picks the model for every stage: pi("anthropic/claude-opus-5-5")
-    implement.ts             # the implement stage
-    review.ts                # the review stage: one run of the code-review skill
+    stages.ts                # the two stages: implement, and review (one run of the code-review skill)
+    project.ts               # shared helpers: factory.json, the ticket, the run record, the logs folder
     findings.ts              # the review's structured answer
   prompts/
     implement.md             # the implementer's prompt; no project facts in it
@@ -126,7 +126,7 @@ Run from the project's root.
 | `factory run <feature>` *(later)* | Implement and review every ticket of a feature in order, skipping blocked ones until what blocks them is done. Stops at the first failure or when nothing is left |
 | `factory status <feature>` *(later)* | One line per ticket: waiting, blocked, implemented, reviewed, failed, with branch, commits, what was left for you, time |
 
-Output streams to the terminal; open it in its own pane to watch. Full logs are in `.sandcastle/logs/`.
+Output streams to the terminal; open it in its own pane to watch. `factory review` also writes its full log to `.sandcastle/logs/` and prints the path; `factory implement` writes no log file yet, so run it in a terminal to see the agent's output.
 
 What a stage must show before it counts as done, checked by the factory, not taken from the agent's summary: at least one commit (implement), a clean working tree, every Check passing.
 
