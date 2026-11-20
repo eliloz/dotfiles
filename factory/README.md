@@ -17,7 +17,7 @@ grill → spec → tickets                     implement → review, per ticket 
 .scratch/<feature>/issues/NN-<slug>.md     run <ticket>:  agent/<feature>-NN-<slug>
 ```
 
-The factory starts where `to-tickets` stops: committed ticket files under `.scratch/`. It ends at a branch with commits and a short list of what it left for you. It never pushes, never opens a pull request and never merges.
+The factory starts where `to-tickets` stops: ticket files under `.scratch/`, committed or kept local (see "In a team's repo"). It ends at a branch with commits and a short list of what it left for you. It never pushes, never opens a pull request and never merges.
 
 ## A typical feature, from idea to merged
 
@@ -28,7 +28,7 @@ Start here when you don't know where to begin. The project is already set up (se
 1. `/grill-with-docs <the idea>` (or `/grilling` in a project with no glossary). Answer until it has nothing left to ask.
 2. `/to-spec`. Agree the seams it asks about. It writes `.scratch/<feature>/spec.md`.
 3. `/to-tickets`. Agree the breakdown and the blocking edges. It writes `.scratch/<feature>/issues/01-….md`, `02-….md`, …
-4. Read the tickets, then commit them: `git add .scratch && git commit -m "<feature>: spec and tickets"`.
+4. Read the tickets, then commit them: `git add .scratch && git commit -m "<feature>: spec and tickets"`. In a team's repo, leave them uncommitted instead: they stay on your Mac (see "In a team's repo").
 
 **Unattended, from your working branch:**
 
@@ -109,6 +109,7 @@ The project does not need Sandcastle in its own `package.json`. The factory brin
 ### What the runner sees
 
 - **The ticket's branch**, as a git worktree mounted into the container. The rest of your checkout is not mounted.
+- **Local files, copied in:** an uncommitted `.scratch/<feature>/` and an uncommitted `AGENTS.md` (see "In a team's repo").
 - **The global skills**, read-only: `~/dotfiles/agents/.agents/skills/` is mounted at `~/.agents/skills/` in the container, so Pi there loads the same skills as Pi on the Mac. That is how the review stage uses `code-review` with no copy in the project.
 - **The key in `.sandcastle/.env`.** The agent can read it and the network is open, so use a separate, spend-capped key. Isolation beyond that is M5b in the plan (sbx).
 
@@ -118,7 +119,7 @@ Run from the project's root.
 
 | Command | What it does |
 |---|---|
-| `factory init` | Writes `.sandcastle/Dockerfile`, `factory.json` and `.env.example` from the templates, adds the gitignore lines, and lists what to edit. Refuses if `.sandcastle/Dockerfile` exists |
+| `factory init [--local]` | Writes `.sandcastle/Dockerfile`, `factory.json` and `.env.example` from the templates, adds the gitignore lines, and lists what to edit. `--local` keeps `.sandcastle/` out of the repo instead, for a team's repo. Refuses if `.sandcastle/Dockerfile` exists |
 | `factory build` | Builds the project's image from `.sandcastle/Dockerfile`. Again after changing the Dockerfile |
 | `factory doctor` | Docker running, image built, key present, `factory.json` valid, skills mount found, the working tree clean |
 | `factory smoke` | One "Hello" run: proves the image, the key and that Sandcastle reads Pi's output |
@@ -132,10 +133,22 @@ Output streams to the terminal; open it in its own pane to watch. `factory revie
 
 What a stage must show before it counts as done, checked by the factory, not taken from the agent's summary: at least one commit (implement), a clean working tree, every Check passing.
 
+## In a team's repo: nothing of the factory committed
+
+The factory can wrap a repo without adding anything to it. Three things live only on your Mac:
+
+- **`.sandcastle/`:** `factory init --local` lists it in `.git/info/exclude`, git's ignore file that is never committed.
+- **The spec and tickets:** leave `.scratch/<feature>/` uncommitted. A factory run lists it in `.git/info/exclude` and copies it into each runner.
+- **`AGENTS.md`**, when the repo has none: write one and leave it uncommitted. It is handled the same way.
+
+Each path is either committed or wholly untracked. A partly committed one (a new ticket beside committed ones) is refused: commit the rest, or untrack it all. Branches then hold only the agent's code, so merging one adds nothing else.
+
+Use `.git/info/exclude`, not your global git ignore file: git in the runner reads the repo's `.git`, but cannot see files on your Mac outside it. The factory writes the lines itself, under `# factory: local only`, and prints each one it adds.
+
 ## Setting up a project
 
 1. The project has `AGENTS.md` and a local tracker (`agents/README.md`, "Onboarding a new project"). Its tickets come from `to-tickets`.
-2. `factory init`. Edit `.sandcastle/Dockerfile` for the project's toolchain and `.sandcastle/factory.json` for its setup and Checks.
+2. `factory init`, or `factory init --local` in a team's repo. Edit `.sandcastle/Dockerfile` for the project's toolchain and `.sandcastle/factory.json` for its setup and Checks.
 3. Put the facts the runner needs in `AGENTS.md`, not in the prompts: where behaviour goes, how tests are written, and where the coding standards are. The reviewer finds standards with step 3 of `code-review` (it searches for them, and always takes `CODING_STANDARDS.md` or `CONTRIBUTING.md` when present); a line in `AGENTS.md` naming the file makes it certain.
 4. Create `.sandcastle/.env` with a separate, spend-capped key.
 5. Docker Desktop running. `factory build`, `factory doctor`, `factory smoke`.
@@ -153,7 +166,7 @@ The bench tests a stage the way the lab tests a skill: saved cases with a plante
 
 ## Rules
 
-- A ticket must be committed before a factory run: the runner starts from a worktree of HEAD. `factory run <feature>` checks every ticket of the feature before it starts.
+- A ticket is committed before a factory run, or wholly local: the runner starts from a worktree of HEAD, and local tickets and `AGENTS.md` are copied in. `factory run <feature>` checks the feature before it starts.
 - One branch per feature run, one per single-ticket run. Each review sees only its own ticket's commits: its base is where that ticket's implement began.
 - The factory never pushes, opens a pull request or merges.
 - What a factory run claims is checked: commits, clean tree, Checks.

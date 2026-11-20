@@ -9,7 +9,7 @@
 // without the person.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fail, git, readRecord, ticket, type Ticket } from "./project.ts";
+import { fail, featureDir, git, localPaths, readRecord, ticket, type Ticket } from "./project.ts";
 import { branchExists, currentBranch, implementOn, reviewStage } from "./stages.ts";
 
 export async function run(target: string | undefined) {
@@ -18,12 +18,10 @@ export async function run(target: string | undefined) {
 
   let tickets: Ticket[];
   let branch: string;
-  let committed: string;
   if (fs.statSync(target).isFile()) {
     const t = ticket(target);
     tickets = [t];
     branch = t.branch;
-    committed = t.path;
   } else {
     const issues = path.basename(path.resolve(target)) === "issues" ? target : path.join(target, "issues");
     if (!fs.existsSync(issues)) fail(`no ${issues}/: a feature's tickets live in .scratch/<feature>/issues/`);
@@ -34,12 +32,10 @@ export async function run(target: string | undefined) {
       .map((f) => ticket(path.join(issues, f)));
     if (tickets.length === 0) fail(`no tickets (NN-<slug>.md) in ${issues}/`);
     branch = `agent/${tickets[0].feature}`;
-    committed = path.relative(process.cwd(), path.resolve(issues));
   }
 
-  if (git("status", "--porcelain", "--", committed) !== "") {
-    fail(`commit ${committed} first: the runner starts from a worktree of HEAD`);
-  }
+  // Committed, or kept local and copied into each runner: fail early if neither.
+  localPaths([featureDir(tickets[0].path), "AGENTS.md"]);
   const from = currentBranch();
   if (from === branch) fail(`you are on ${branch}: check out the branch it should start from`);
 

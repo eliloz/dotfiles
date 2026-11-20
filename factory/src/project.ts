@@ -126,3 +126,43 @@ export const logsDir = () => {
 };
 
 export const tildify = (p: string) => p.replace(os.homedir(), "~");
+
+// What the runner needs from the project that may live only on this Mac: the
+// feature's spec and tickets, and AGENTS.md. Each path is either committed
+// (the runner's worktree has it) or wholly untracked: then it stays local,
+// is listed in .git/info/exclude so no commit in the runner takes it (the
+// runner's git reads that file; a global ignore file it cannot see), and is
+// copied into the runner's worktree. Returns the paths to copy.
+export function localPaths(paths: string[]): string[] {
+  const copy: string[] = [];
+  for (const p of paths) {
+    if (!fs.existsSync(p)) continue;
+    const tracked = git("ls-files", "--", p) !== "";
+    if (tracked) {
+      if (git("status", "--porcelain", "--", p) !== "") {
+        fail(`${p} is partly committed: commit the rest first, or untrack it all to keep it local`);
+      }
+      continue;
+    }
+    exclude(p);
+    copy.push(p);
+  }
+  return copy;
+}
+
+function exclude(p: string) {
+  const file = git("rev-parse", "--git-path", "info/exclude");
+  const line = `/${p.replace(/\/$/, "")}${fs.statSync(p).isDirectory() ? "/" : ""}`;
+  const now = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  if (now.split("\n").includes(line)) return;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const header = now.includes("# factory: local only") ? "" : "\n# factory: local only, kept out of the repo's commits\n";
+  fs.appendFileSync(file, `${now === "" || now.endsWith("\n") ? "" : "\n"}${header}${line}\n`);
+  console.log(`local   ${p} (added ${line} to ${file}; never committed)`);
+}
+
+// The feature folder of a ticket or spec under .scratch/<feature>/, else the path itself.
+export const featureDir = (p: string) => {
+  const parts = path.normalize(p).split(path.sep);
+  return parts[0] === ".scratch" && parts.length > 2 ? path.join(parts[0], parts[1]) : p;
+};

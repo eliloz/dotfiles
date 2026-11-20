@@ -239,7 +239,7 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li><code>/grill-with-docs &lt;idea&gt;</code>: answer until nothing is left to ask.</li>
     <li><code>/to-spec</code>: agree the seams.</li>
     <li><code>/to-tickets</code>: agree the breakdown and the blocking edges.</li>
-    <li>Read the tickets and commit them.</li>
+    <li>Read the tickets and commit them. In a team's repo, leave them uncommitted: they stay on your Mac.</li>
   </ol></div>
   <div class="f"><h4>Unattended, the whole feature</h4><ol start="5">
     <li><code>factory run .scratch/&lt;feature&gt;</code>, in its own pane. Every ticket in number order, implement then review, on one branch <code>agent/&lt;feature&gt;</code>. It stops at the first failure.</li>
@@ -305,7 +305,7 @@ git merge agent/&lt;feature&gt;                                          # step 
   <li>Run <code>/setup-matt-pocock-skills</code>. It writes the tracker and glossary sections of <code>AGENTS.md</code>. Choose the local tracker unless the project needs GitHub issues.</li>
   <li>Put the project's other facts in <code>AGENTS.md</code>: commands, conventions, where behaviour goes, where the coding standards are. A skill says how to do a job. The project's facts go here, not into a skill or a prompt.</li>
   <li>Add <code>.agents/skill-tests/*/reports/</code> and <code>sidecars/*/reports/</code> to <code>.gitignore</code>.</li>
-  <li>For the factory: <code>factory init</code>, then edit <code>.sandcastle/Dockerfile</code> for the toolchain and <code>.sandcastle/factory.json</code> for the setup command and the Checks.</li>
+  <li>For the factory: <code>factory init</code> (<code>factory init --local</code> in a team's repo, so nothing of the factory is committed), then edit <code>.sandcastle/Dockerfile</code> for the toolchain and <code>.sandcastle/factory.json</code> for the setup command and the Checks.</li>
   <li>Create <code>.sandcastle/.env</code> with a separate, spend-capped key.</li>
   <li>With Docker Desktop running: <code>factory build</code>, <code>factory doctor</code>, <code>factory smoke</code>.</li>
   <li>Write no tests up front. The first test in a project comes from the first time a skill misbehaves there.</li>
@@ -439,7 +439,7 @@ git merge agent/&lt;feature&gt;                                          # step 
 <h4>How to drive it</h4>
 <div class="tw"><table>
 <tr><th>Command</th><th>What it does</th></tr>
-<tr><td><code>factory init</code></td><td>Writes <code>.sandcastle/Dockerfile</code>, <code>factory.json</code> and <code>.env.example</code> from the templates, and lists what to edit</td></tr>
+<tr><td><code>factory init [--local]</code></td><td>Writes <code>.sandcastle/Dockerfile</code>, <code>factory.json</code> and <code>.env.example</code> from the templates, and lists what to edit. <code>--local</code> keeps <code>.sandcastle/</code> out of the repo, for a team's repo</td></tr>
 <tr><td><code>factory build</code></td><td>Builds the project's image. Again after changing the Dockerfile</td></tr>
 <tr><td><code>factory doctor</code></td><td>Docker running, image built, key present, <code>factory.json</code> valid, skills mount found, working tree clean</td></tr>
 <tr><td><code>factory smoke</code></td><td>One "Hello" run: proves the image, the key and that Pi's output is read</td></tr>
@@ -452,14 +452,17 @@ git merge agent/&lt;feature&gt;                                          # step 
 <h4>What the runner sees</h4>
 <ul>
   <li><b>The ticket's branch</b>, as a git worktree mounted into the container. The rest of your checkout is not mounted.</li>
+  <li><b>Local files, copied in:</b> an uncommitted <code>.scratch/&lt;feature&gt;/</code> and an uncommitted <code>AGENTS.md</code>.</li>
   <li><b>The global skills</b>, read-only, so Pi in the container loads the same skills as Pi on the Mac.</li>
   <li><b>The key in <code>.sandcastle/.env</code>.</b> The agent can read it and the network is open, so use a separate, spend-capped key.</li>
 </ul>
+<h4>In a team's repo</h4>
+<p>Nothing of the factory needs committing. <code>factory init --local</code> keeps <code>.sandcastle/</code> local. Leave <code>.scratch/&lt;feature&gt;/</code> and, if the repo has none, <code>AGENTS.md</code> uncommitted: a factory run lists them in <code>.git/info/exclude</code> (never committed) and copies them into each runner, so branches hold only the agent's code. Use that file, not your global git ignore: git in the runner cannot see the global one. A partly committed feature folder is refused.</p>
 <h4>What counts as done</h4>
 <p>Checked by the factory, not taken from the agent's summary: at least one commit (implement), a clean working tree, every Check passing.</p>
 <h4>The rules</h4>
 <ul>
-  <li>A ticket must be committed before a factory run.</li>
+  <li>A ticket is committed before a factory run, or wholly local. Local tickets and a local <code>AGENTS.md</code> are copied into each runner.</li>
   <li>One branch per feature run, one per single-ticket run. Each review sees only its own ticket's commits.</li>
   <li>The factory never pushes, never opens a pull request and never merges.</li>
   <li>One model choice for every stage, in <code>src/agent.ts</code>.</li>
@@ -723,7 +726,7 @@ git merge agent/&lt;feature&gt;                                          # step 
 <dl id="glist"></dl>
 </section>
 
-<footer>Checked against <code>~/dotfiles</code> at <code>455db56</code> plus <code>factory run</code>, and the plan on 2026-11-20.</footer>
+<footer>Checked against <code>~/dotfiles</code> at <code>3956585</code> plus local mode, and the plan on 2026-11-20.</footer>
 </main>
 </div>
 <div id="tip" role="tooltip"></div>

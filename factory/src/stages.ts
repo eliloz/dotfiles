@@ -9,6 +9,8 @@ import {
   PROMPTS,
   checkList,
   fail,
+  featureDir,
+  localPaths,
   git,
   logsDir,
   readRecord,
@@ -30,9 +32,12 @@ export const branchExists = (b: string) => {
   }
 };
 
-const open = (branch: string, settings: Settings, base?: string) =>
+// `spec` is the ticket (or the bench's spec): its feature folder and AGENTS.md
+// are copied in when they live only on this Mac.
+const open = (branch: string, settings: Settings, spec: string, base?: string) =>
   createSandbox({
     branch,
+    copyToWorktree: localPaths([featureDir(spec), "AGENTS.md"]),
     ...(base ? { baseBranch: base } : {}),
     sandbox: runner(),
     hooks: {
@@ -76,9 +81,7 @@ function finish(
 // `factory implement <ticket>`: the stage alone, on the ticket's own branch.
 export async function implement(file: string | undefined) {
   const t = ticket(file);
-  if (git("status", "--porcelain", "--", t.path) !== "") {
-    fail(`commit ${t.path} first: the runner starts from a worktree of HEAD`);
-  }
+  localPaths([featureDir(t.path), "AGENTS.md"]);
   const from = currentBranch();
   if (branchExists(t.branch)) {
     fail(`${t.branch} exists already. Review it, or delete it to start over: git branch -D ${t.branch}`);
@@ -103,7 +106,7 @@ export async function implementOn(t: Ticket, branch: string, from: string): Prom
   const started = Date.now();
   console.log(`implement ${t.path} on ${branch}, from ${from} (${base.slice(0, 7)})`);
 
-  const sandbox = await open(branch, settings, base);
+  const sandbox = await open(branch, settings, t.path, base);
   const problems: string[] = [];
   let checks: Record<string, boolean> = {};
   try {
@@ -173,7 +176,7 @@ export async function reviewStage(options: ReviewOptions) {
   };
   console.log(`review ${branch} against ${spec}, since ${baseSha.slice(0, 7)} (log ${logging.path})`);
 
-  const sandbox = await open(branch, settings);
+  const sandbox = await open(branch, settings, spec);
   const problems: string[] = [];
   let checks: Record<string, boolean> = {};
   let findings: Finding[] = [];

@@ -13,6 +13,7 @@ import {
   enterRoot,
   fail,
   git,
+  localPaths,
   readSettings,
   runner,
   tildify,
@@ -22,7 +23,8 @@ import { implement, review } from "./stages.ts";
 
 const HELP = `factory: run the flow's unattended stages in Docker. Run from a project's root.
 
-  factory init                 write .sandcastle/ (Dockerfile, factory.json, .env.example) from the templates
+  factory init [--local]       write .sandcastle/ (Dockerfile, factory.json, .env.example) from the templates;
+                               --local keeps it out of the repo (.git/info/exclude), for a team's repo
   factory build                build the project's image from .sandcastle/Dockerfile
   factory doctor               is everything in place?
   factory smoke                one "Hello" run: image, key, Pi's output, the skills mount
@@ -47,7 +49,7 @@ const root = enterRoot();
 
 switch (command) {
   case "init":
-    init();
+    init(rest.includes("--local"));
     break;
   case "build":
     build();
@@ -82,7 +84,7 @@ switch (command) {
     fail(`unknown command '${command}'. Try 'factory --help'.`);
 }
 
-function init() {
+function init(local: boolean) {
   const dir = ".sandcastle";
   if (fs.existsSync(path.join(dir, "Dockerfile"))) fail(`${dir}/Dockerfile exists already`);
   fs.mkdirSync(dir, { recursive: true });
@@ -101,14 +103,16 @@ function init() {
     fs.copyFileSync(path.join(TEMPLATES, from), target);
     console.log(`wrote   ${target}`);
   }
+  if (local) localPaths([dir]);
   console.log(`
 Now:
   1. Edit ${dir}/Dockerfile for the project's toolchain.
   2. Edit ${dir}/factory.json: "setup" installs and prepares the project in a fresh runner;
      "checks" are the commands every stage must leave passing.
-  3. Put where code goes and how it is tested in AGENTS.md, not in the prompts.
+  3. Put where code goes and how it is tested in AGENTS.md, not in the prompts.${local ? `
+     No AGENTS.md in the repo? Write one anyway: an untracked AGENTS.md stays local and is copied into each runner.` : ""}
   4. Copy ${dir}/.env.example to ${dir}/.env and add a separate, spend-capped key.
-  5. Commit ${dir}/ (the .gitignore there keeps .env, logs, worktrees and runs out).
+  5. ${local ? `Nothing to commit: ${dir}/ is local only.` : `Commit ${dir}/ (the .gitignore there keeps .env, logs, worktrees and runs out).`}
   6. factory build, factory doctor, factory smoke.`);
 }
 
@@ -141,8 +145,11 @@ function doctor() {
   line(keyed, "ANTHROPIC_API_KEY in .sandcastle/.env or the environment", "add a separate, spend-capped key");
   line(fs.existsSync(path.join(SKILLS, "code-review", "SKILL.md")), `skills to mount: ${tildify(SKILLS)}`, "code-review/SKILL.md missing");
   line(fs.existsSync("AGENTS.md"), "AGENTS.md present", "the runner reads the project's facts from it");
-  const dirty = git("status", "--porcelain");
-  line(dirty === "", "working tree clean", "commit first: a runner starts from HEAD and sees only commits");
+  // Untracked tickets and AGENTS.md are fine: a factory run keeps them local and copies them in.
+  const dirty = git("status", "--porcelain")
+    .split("\n")
+    .filter((l) => l && !/^\?\? (\.scratch\/|AGENTS\.md$)/.test(l));
+  line(dirty.length === 0, "working tree clean", "commit first, or for .sandcastle/ run 'factory init --local': a runner starts from HEAD");
   process.exit(bad === 0 ? 0 : 1);
 }
 
