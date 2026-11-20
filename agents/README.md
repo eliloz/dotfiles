@@ -12,14 +12,14 @@ Words follow [GLOSSARY.md](GLOSSARY.md), in this folder: **Main**, **skill**, **
 | `test-skill` | A skill that tests another skill: it picks the lab runs for you | `agents/.agents/skills/test-skill/` |
 | The lab | An isolated second workspace where a skill or sidecar is tested from outside. `lab` in a terminal, `/lab` in Pi | `pi/.pi/agent/extensions/lab/`, `scripts/.local/bin/lab` |
 | `/sidecar` | Opens a sidecar: a model in its own pane that watches Main and shows findings | `pi/.pi/agent/extensions/sidecar/` |
-| `/split` | Branches Main into a new pane, for a tangent | `pi/.pi/agent/extensions/split/` |
+| `/split` | Branches Main into a new pane, for a tangent (see "`/split`" below) | `pi/.pi/agent/extensions/split/` |
 
 ## What it needs
 
 - **macOS, the Herdr app and Pi.** The lab opens its own copy of Herdr ("Herdr Lab": separate window, core and socket), so your daily Herdr is never touched. Without Herdr there is no lab. `/sidecar` and `/split` also open Herdr panes.
 - The skills themselves work in Pi and in Claude Code. Only testing them needs the lab.
 - **`lab doctor`** checks all of it (Herdr, `hc`, the Herdr Lab copy, Pi, the model logins, `/split`, `/sidecar`). Every line must show ✓. Run it from inside a git project.
-- Installing Herdr, Pi and the stow packages: the main `README.md`, "New machine".
+- Installing Herdr, Pi and the stow packages: the main `README.md`, "Setting up a new machine".
 
 ## Layout
 
@@ -155,11 +155,29 @@ Not built. In the mega course a widget is a pane that gathers a status with a sc
 
 Build it when a real need shows up, not before.
 
+## `/split`
+
+A Pi command. `/split ["name"]` branches Main into a new Herdr pane to its right. You pick the message to branch at, or the whole conversation. The branch's agent waits for your next message. Main is never changed.
+
+- **When:** a tangent, most often during grilling: a side question worth following without derailing the round Main is on.
+- `/split "Calendar idea"` names the branch. `/split --help` prints the guide and adds nothing to the conversation.
+- The branch is told that Main is still running and may be changing the same files.
+- It needs a Herdr pane (`hc` and `herdr-app` on PATH). If the pane cannot be opened, the branch is still saved and the error shows the `pi --session` command that opens it.
+
 ## The lab
 
 What one lab run does: opens the Herdr Lab window, copies the project's tracked files (no `.git`, no secrets, no `.agents/`, no `AGENTS.md` except in a skill test, no expectations or baselines), starts guest Main in the copy with only the thing under test, and starts a Tester that types each Do line and judges from the screen alone. Then it writes a report and closes everything.
 
-How I normally use it:
+### How a lab run uses Herdr
+
+- **A second Herdr, never yours.** The lab runs "Herdr Lab": a copy of Herdr.app with its own bundle id (`dev.herdr.lab`), its own core (`HC_SESSION`), socket and app home. Everything the lab sends goes to that socket, so your daily Herdr, its windows and its panes are never addressed. The copy is cached in `~/.lab/app`.
+- **Its own Pi profile.** A scratch profile that links only `auth.json`, your model logins. Lab panes load `/split`, `/sidecar` and whatever `LAB_EXTENSIONS` names, nothing else of yours.
+- **The panes.** A skill test has two: guest Main, and the Tester to its right. A sidecar test has three: guest Main, the sidecar that Main opens with `/sidecar`, and the Tester below.
+- **How the Tester drives them.** The Tester is a headless Pi (`pi -p --no-extensions`, only the `lab_*` tools) started in an empty folder, so it cannot read the project or the text under test. It types with `hc send`, presses keys with `hc keys`, reads a pane's screen with `hc read` and takes a picture of the window with `herdr-app shot`.
+- **The quote rule.** Every Expect or Never verdict must quote the screen word for word. A quote that was not on a screen the Tester was shown is rejected. See, Absent and Check lines are checked by the lab itself and override the Tester.
+- **Teardown.** After the report the lab removes its window, core, terminals and `~/.lab/<id>`, and lists anything left. A test started with `/lab` in Pi leaves its lab open until `/lab stop`; so does `--keep`. `lab stop all` closes every lab and `lab leftovers` shows anything still running or on disk.
+
+### How I normally use it
 
 - **Through `test-skill`.** The commands below are for doing a step by hand.
 - **From the project's root**, always. A file must be committed, or at least `git add`ed, before a lab sees it.

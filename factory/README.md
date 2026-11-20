@@ -4,7 +4,7 @@ Runs the unattended stages of the flow (implement, then review) on tickets, each
 
 Words follow [GLOSSARY.md](../agents/GLOSSARY.md): **stage**, **ticket**, **runner** (the container), **factory run** (one stage on one runner), **Check**.
 
-**Status (2026-11-20):** built and smoke-tested in the course project (`factory doctor`, `factory smoke`). Not yet run end to end on a ticket from here. What is not built yet is marked *(later)*.
+**Status (2026-11-20):** `factory implement` and `factory review` are proven end to end in the course project, on its ticket 02: both ended `OK` and every Check passed after each. Known gap: `factory implement` writes no log file yet. What is not built yet is marked *(later)*.
 
 ## Where the factory sits in the flow
 
