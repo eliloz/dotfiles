@@ -1,0 +1,12 @@
+# Personal Mac only. Run after the shared list:
+#   brew bundle --file ~/dotfiles/Brewfile.personal
+
+# Play, record, convert, and stream select audio and video codecs
+brew "ffmpeg"
+# Port of OpenAI's Whisper model in C/C++
+brew "whisper.cpp"
+
+# Spaced-repetition flashcards
+cask "anki"
+# Voice and text chat
+cask "discord"

@@ -1,10 +1,12 @@
+# Shared list: what both machines need. `brew bundle` uses this one by default
+# (HOMEBREW_BUNDLE_FILE in .zprofile). Each machine also has its own list:
+# Brewfile.personal, or Brewfile.local (not tracked) where the list stays private.
+
 # Docker's tap (for sbx)
 tap "docker/tap"
 
 # Simple, fast and user-friendly alternative to find
 brew "fd"
-# Play, record, convert, and stream select audio and video codecs
-brew "ffmpeg"
 # Command-line fuzzy finder written in Go
 brew "fzf"
 # GitHub command-line tool
@@ -37,8 +39,6 @@ brew "tilt"
 brew "tmux"
 # Parser generator tool (nvim-treesitter uses it to build parsers)
 brew "tree-sitter-cli"
-# Port of OpenAI's Whisper model in C/C++
-brew "whisper.cpp"
 # Fish-like fast/unobtrusive autosuggestions for zsh
 brew "zsh-autosuggestions"
 # Fish shell like syntax highlighting for zsh
@@ -48,10 +48,6 @@ brew "zsh-syntax-highlighting"
 cask "1password"
 # 1Password command-line tool
 cask "1password-cli"
-# Spaced-repetition flashcards
-cask "anki"
-# Voice and text chat
-cask "discord"
 # App to build and share containerised applications and microservices
 cask "docker-desktop"
 cask "font-meslo-lg-nerd-font"
