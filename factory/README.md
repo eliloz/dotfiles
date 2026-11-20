@@ -155,3 +155,4 @@ The bench tests a stage the way the lab tests a skill: saved cases with a plante
 - The factory never pushes, opens a pull request or merges.
 - What a factory run claims is checked: commits, clean tree, Checks.
 - One model choice, in `src/agent.ts`, for every stage.
+- When this file changes, update the matching part of `docs/guide.html` and its footer.

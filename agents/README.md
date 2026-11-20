@@ -207,5 +207,6 @@ After changing the lab's code: `cd ~/dotfiles/pi/.pi/agent/extensions/lab && nod
 - One change at a time, measured over 5 runs before it is kept.
 - The Tester never sees the text of what it tests.
 - Commit locally; push when I choose.
+- When this file changes, update the matching part of `docs/guide.html` and its footer.
 
 The unattended part (implement and review runs in Docker, and their bench) is the factory: [../factory/README.md](../factory/README.md).
