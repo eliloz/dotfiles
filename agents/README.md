@@ -190,4 +190,4 @@ After changing the lab's code: `cd ~/dotfiles/pi/.pi/agent/extensions/lab && nod
 - The Tester never sees the text of what it tests.
 - Commit locally; push when I choose.
 
-The unattended part (implement and review runs in Docker, and their bench) is not covered here. It is paused; see `~/code/ai/software-factories/TESTABLE-FLOW-PLAN.md`.
+The unattended part (implement and review runs in Docker, and their bench) is the factory: [../factory/README.md](../factory/README.md).

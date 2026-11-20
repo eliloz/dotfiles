@@ -4,7 +4,7 @@ Runs the unattended stages of the flow (implement, then review) on tickets, each
 
 Words follow [GLOSSARY.md](../agents/GLOSSARY.md): **stage**, **ticket**, **runner** (the container), **factory run** (one stage on one runner), **Check**.
 
-**Status: target, not built.** Today the factory exists only in the course project's `.sandcastle/`, with an `--approach b|c` flag on review. This README is what it becomes. What is not built yet is marked *(later)*.
+**Status (2026-11-20):** built and smoke-tested in the course project (`factory doctor`, `factory smoke`). Not yet run end to end on a ticket from here. What is not built yet is marked *(later)*.
 
 ## Where the factory sits in the flow
 
@@ -149,7 +149,7 @@ What a stage must show before it counts as done, checked by the factory, not tak
 
 The bench tests a stage the way the lab tests a skill: saved cases with a planted defect, Checks and a judged line or two, `--runs N`. The bench tool is the lab's (`bench`, in `pi/.pi/agent/extensions/lab/`); its cases live in the project whose code they use (`.sandcastle/bench/<stage>/<case>/`). Change a prompt here, rerun the bench there, keep the change only if nothing dropped.
 
-The course project's bench also keeps review approach B (two reviewers, one per axis, then a fix run) as an experiment, for a test on a larger change. B is never part of this factory. If it wins, it replaces the review stage here.
+The course project's bench also keeps review approach B (two reviewers, one per axis, then a fix run) as an experiment, for a test on a larger change. B is never part of this factory. If it wins, it replaces the review stage here. There, `bench review <case>` runs the shipped review (`factory review`) and `bench review <case> -- b` runs B, through `.sandcastle/bench/review/stage.sh`.
 
 ## Rules
 

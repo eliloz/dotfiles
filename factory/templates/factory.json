@@ -1,0 +1,4 @@
+{
+  "setup": "npm ci",
+  "checks": ["npm run typecheck", "npm run test"]
+}
