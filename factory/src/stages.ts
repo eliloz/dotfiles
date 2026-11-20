@@ -18,9 +18,10 @@ import {
   writeRecord,
   type Settings,
   type StageResult,
+  type Ticket,
 } from "./project.ts";
 
-const branchExists = (b: string) => {
+export const branchExists = (b: string) => {
   try {
     git("rev-parse", "--verify", "--quiet", `refs/heads/${b}`);
     return true;
@@ -72,22 +73,37 @@ function finish(
   };
 }
 
+// `factory implement <ticket>`: the stage alone, on the ticket's own branch.
 export async function implement(file: string | undefined) {
-  const settings = readSettings();
   const t = ticket(file);
   if (git("status", "--porcelain", "--", t.path) !== "") {
     fail(`commit ${t.path} first: the runner starts from a worktree of HEAD`);
   }
-  const from = git("branch", "--show-current");
-  if (!from) fail("check out a branch first: HEAD is detached");
+  const from = currentBranch();
   if (branchExists(t.branch)) {
     fail(`${t.branch} exists already. Review it, or delete it to start over: git branch -D ${t.branch}`);
   }
-  const base = git("rev-parse", "HEAD");
-  const started = Date.now();
-  console.log(`implement ${t.path} on ${t.branch}, from ${from} (${base.slice(0, 7)})`);
+  const result = await implementOn(t, t.branch, from);
+  if (!result.ok) fail(`FAILED: ${result.problems.join("; ")}`);
+  console.log(`OK. Next: factory review ${t.path}`);
+}
 
-  const sandbox = await open(t.branch, settings, base);
+export function currentBranch() {
+  const from = git("branch", "--show-current");
+  if (!from) fail("check out a branch first: HEAD is detached");
+  return from;
+}
+
+// The implement stage on `branch`: a new branch from HEAD, or an existing one
+// from its tip (a feature run, where each ticket builds on the one before).
+// Writes the ticket's record and returns the result; never exits.
+export async function implementOn(t: Ticket, branch: string, from: string): Promise<StageResult> {
+  const settings = readSettings();
+  const base = git("rev-parse", branchExists(branch) ? `refs/heads/${branch}` : "HEAD");
+  const started = Date.now();
+  console.log(`implement ${t.path} on ${branch}, from ${from} (${base.slice(0, 7)})`);
+
+  const sandbox = await open(branch, settings, base);
   const problems: string[] = [];
   let checks: Record<string, boolean> = {};
   try {
@@ -105,14 +121,13 @@ export async function implement(file: string | undefined) {
     const closed = await sandbox.close();
     if (closed.preservedWorktreePath) problems.push(`uncommitted changes left in ${closed.preservedWorktreePath}`);
   }
-  const commits = commitsSince(base, t.branch);
+  const commits = commitsSince(base, branch);
   if (commits.length === 0) problems.unshift("no commit");
   const result = finish(started, problems, commits, checks);
-  writeRecord(t, { ticket: t.path, branch: t.branch, from, base, implement: result });
+  writeRecord(t, { ticket: t.path, branch, from, base, implement: result });
 
   console.log(`commits: ${commits.map((c) => c.slice(0, 7)).join(", ") || "none"} · ${result.seconds}s`);
-  if (!result.ok) fail(`FAILED: ${result.problems.join("; ")}`);
-  console.log(`OK. Next: factory review ${t.path}`);
+  return result;
 }
 
 export interface ReviewOptions {
@@ -124,7 +139,16 @@ export interface ReviewOptions {
   out?: string;
 }
 
+// `factory review`: the stage alone. Exits on failure.
 export async function review(options: ReviewOptions) {
+  const { result, from, base, branch } = await reviewStage(options);
+  if (!result.ok) fail(`FAILED: ${result.problems.join("; ")}`);
+  console.log(`OK. Read it: git diff ${from ?? base.slice(0, 7)}...${branch}`);
+}
+
+// The review stage. Writes the record (or --out) and returns the result; never exits
+// on a failed run, only on wrong arguments.
+export async function reviewStage(options: ReviewOptions) {
   const settings = readSettings();
   let branch: string, base: string, spec: string;
   const t = options.ticket ? ticket(options.ticket) : undefined;
@@ -185,8 +209,7 @@ export async function review(options: ReviewOptions) {
     `findings: ${findings.length} (${findings.length - left.length} fixed, ${left.length} left for you) · commits: ${commits.length} · ${result.seconds}s`
   );
   for (const f of left) console.log(`  left: ${f.path}:${f.line} ${f.title}`);
-  if (!result.ok) fail(`FAILED: ${result.problems.join("; ")}`);
-  console.log(`OK. Read it: git diff ${record?.from ?? baseSha.slice(0, 7)}...${branch}`);
+  return { result, from: record?.from, base: baseSha, branch };
 }
 
 // The same session, asked for its findings as JSON; one retry.

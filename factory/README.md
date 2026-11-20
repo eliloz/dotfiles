@@ -1,18 +1,20 @@
 # factory
 
-Runs the unattended stages of the flow (implement, then review) on tickets, each in its own Docker container, in any project on this Mac. One copy of the factory lives here. Each project keeps only what is about that project.
+Runs the unattended stages of the flow (implement, then review) on one ticket or on every ticket of a feature, each in its own Docker container, in any project on this Mac. One copy of the factory lives here. Each project keeps only what is about that project.
 
 Words follow [GLOSSARY.md](../agents/GLOSSARY.md): **stage**, **ticket**, **runner** (the container), **factory run** (one stage on one runner), **Check**.
 
-**Status (2026-11-20):** `factory implement` and `factory review` are proven end to end in the course project, on its ticket 02: both ended `OK` and every Check passed after each. Known gap: `factory implement` writes no log file yet. What is not built yet is marked *(later)*.
+The two commands you normally type are `factory run <ticket>` and `factory run <feature>`. Both run implement, then review. `factory implement` and `factory review` run a single stage, for debugging, rerunning a stage, or the bench.
+
+**Status (2026-11-20):** `factory implement` and `factory review` are proven end to end in the course project, on its ticket 02: both ended `OK` and every Check passed after each. Known gap: `factory implement` writes no log file yet. `factory run` is built and its guards are tested, but it has not yet run a real ticket end to end. What is not built yet is marked *(later)*.
 
 ## Where the factory sits in the flow
 
 ```
 at the keyboard (Main, skills)             unattended (factory)                 you again
-grill → spec → tickets                     implement → review                   read the branch, merge or not
-.scratch/<feature>/spec.md                 one branch per ticket:
-.scratch/<feature>/issues/NN-<slug>.md     agent/<feature>-NN-<slug>
+grill → spec → tickets                     implement → review, per ticket       read the branch, merge or not
+.scratch/<feature>/spec.md                 run <feature>: one branch, agent/<feature>
+.scratch/<feature>/issues/NN-<slug>.md     run <ticket>:  agent/<feature>-NN-<slug>
 ```
 
 The factory starts where `to-tickets` stops: committed ticket files under `.scratch/`. It ends at a branch with commits and a short list of what it left for you. It never pushes, never opens a pull request and never merges.
@@ -28,25 +30,24 @@ Start here when you don't know where to begin. The project is already set up (se
 3. `/to-tickets`. Agree the breakdown and the blocking edges. It writes `.scratch/<feature>/issues/01-….md`, `02-….md`, …
 4. Read the tickets, then commit them: `git add .scratch && git commit -m "<feature>: spec and tickets"`.
 
-**Unattended, one ticket at a time, from your working branch:**
+**Unattended, from your working branch:**
 
-5. Pick a ticket whose "Blocked by" tickets are all merged. Start with `01`.
-6. `factory implement .scratch/<feature>/issues/01-<slug>.md`, in its own pane. It streams what the agent does; a run takes a few minutes. It ends with `OK` and the branch name, or `FAILED` and why.
-7. `factory review .scratch/<feature>/issues/01-<slug>.md`. It reviews that branch, commits its fixes and prints what it left for you to decide.
-8. Read the branch: `git log --oneline <your branch>..agent/<feature>-01-<slug>` and `git diff <your branch>...agent/<feature>-01-<slug>`. Decide what it left for you.
-9. Merge it yourself (`git merge agent/<feature>-01-<slug>`), or delete the branch and fix the ticket.
-10. Back to step 5 with the next ticket. A ticket starts from your branch as it is, so merge what blocks it first.
+5. `factory run .scratch/<feature>`, in its own pane. For each ticket in number order (`to-tickets` numbers them blockers first) it implements, then reviews, all on one branch, `agent/<feature>`. Each ticket starts from the commits of the one before. It streams what the agent does and ends with `OK`, the branch and what was left for you on each ticket, or `FAILED` at the first ticket that failed. A failure stops the run: later tickets build on earlier ones.
+6. Read the branch: `git log --oneline <your branch>..agent/<feature>` and `git diff <your branch>...agent/<feature>`. Each ticket's commits come together, implement first, then the review's fixes. Decide what it left for you.
+7. Merge it yourself (`git merge agent/<feature>`), or delete the branch, fix the tickets and run again.
 
-*(later)* `factory run <feature>` does steps 5–7 for every ticket and stops where it needs you; step 8 stays yours.
+**One ticket instead:** `factory run .scratch/<feature>/issues/NN-<slug>.md` does the same for that ticket alone, on `agent/<feature>-NN-<slug>`, from your branch as it is. Use it for a targeted change, or to redo one ticket. What blocks it must be merged into your branch first. You read and merge that branch the same way.
 
-**Where am I?** Until `factory status` exists: the tickets in `.scratch/<feature>/issues/`, the branches in `git branch --list 'agent/*'`, and one record per ticket in `.sandcastle/runs/`.
+**After a failure:** read what it printed and use the table below. Rerunning the same `factory run` starts again where it stopped: tickets whose implement and review both ended `OK` are skipped. It does not redo a failed stage over that stage's commits; it refuses and prints the command that resets the branch to where the stage began, so nothing is thrown away without you.
+
+**Where am I?** Until `factory status` exists: the tickets in `.scratch/<feature>/issues/`, the branches in `git branch --list 'agent/*'`, and one record per ticket in `.sandcastle/runs/`. A record names the branch it ran on, `agent/<feature>` or `agent/<feature>-NN-<slug>`. A ticket belongs to one or the other: `factory run <ticket>` refuses a ticket whose record is on the feature branch, and the other way round, until you delete the record.
 
 **When something goes wrong:**
 
 | What went wrong | Do |
 |---|---|
 | A skill at the keyboard misbehaved (grill, spec, tickets) | `/test-skill <name> <the complaint>` (`agents/README.md`) |
-| A factory run failed (no commit, a Check failing) | Read what it printed (a review also writes its log to `.sandcastle/logs/`). Rerun once; if it fails again, the ticket is probably too big or unclear: split or rewrite it |
+| A factory run failed (no commit, a Check failing) | Read what it printed (a review also writes its log to `.sandcastle/logs/`). Reset as it says and rerun once; if it fails again, the ticket is probably too big or unclear: split or rewrite it |
 | The implementer or reviewer did the wrong thing, again | Turn it into a bench case in the project, then change the prompt here (see "Testing the factory") |
 
 ## Layout
@@ -121,9 +122,10 @@ Run from the project's root.
 | `factory build` | Builds the project's image from `.sandcastle/Dockerfile`. Again after changing the Dockerfile |
 | `factory doctor` | Docker running, image built, key present, `factory.json` valid, skills mount found, the working tree clean |
 | `factory smoke` | One "Hello" run: proves the image, the key and that Sandcastle reads Pi's output |
-| `factory implement <ticket>` | Implement one ticket on `agent/<feature>-<NN-slug>`, from the current branch. Then the Checks, and the record in `.sandcastle/runs/` |
-| `factory review <ticket>` | Review that ticket's branch against the ticket, from the base the record names. Fixes what needs no person's decision, commits each fix, then the Checks. Prints what it left for you |
-| `factory run <feature>` *(later)* | Implement and review every ticket of a feature in order, skipping blocked ones until what blocks them is done. Stops at the first failure or when nothing is left |
+| `factory run <feature>` | Implement, then review, every ticket of `.scratch/<feature>/issues/` in number order, on one branch `agent/<feature>` from the current branch. Skips tickets already done on it; stops at the first failure |
+| `factory run <ticket>` | Implement, then review, one ticket on `agent/<feature>-<NN-slug>`, from the current branch. Skips a stage already done |
+| `factory implement <ticket>` | One stage: implement one ticket on `agent/<feature>-<NN-slug>`, from the current branch. Then the Checks, and the record in `.sandcastle/runs/` |
+| `factory review <ticket>` | One stage: review the branch the ticket's record names against the ticket, from the base the record names. Fixes what needs no person's decision, commits each fix, then the Checks. Prints what it left for you |
 | `factory status <feature>` *(later)* | One line per ticket: waiting, blocked, implemented, reviewed, failed, with branch, commits, what was left for you, time |
 
 Output streams to the terminal; open it in its own pane to watch. `factory review` also writes its full log to `.sandcastle/logs/` and prints the path; `factory implement` writes no log file yet, so run it in a terminal to see the agent's output.
@@ -137,7 +139,7 @@ What a stage must show before it counts as done, checked by the factory, not tak
 3. Put the facts the runner needs in `AGENTS.md`, not in the prompts: where behaviour goes, how tests are written, and where the coding standards are. The reviewer finds standards with step 3 of `code-review` (it searches for them, and always takes `CODING_STANDARDS.md` or `CONTRIBUTING.md` when present); a line in `AGENTS.md` naming the file makes it certain.
 4. Create `.sandcastle/.env` with a separate, spend-capped key.
 5. Docker Desktop running. `factory build`, `factory doctor`, `factory smoke`.
-6. The first real ticket: `factory implement <ticket>`, read the branch, `factory review <ticket>`, read it again.
+6. The first real ticket: `factory run <ticket>`, then read the branch. Running the two stages by hand (`factory implement`, read, `factory review`, read again) shows what each one did.
 
 ## One-time setup on a Mac
 
@@ -151,7 +153,8 @@ The bench tests a stage the way the lab tests a skill: saved cases with a plante
 
 ## Rules
 
-- A ticket must be committed before a factory run: the runner starts from a worktree of HEAD.
+- A ticket must be committed before a factory run: the runner starts from a worktree of HEAD. `factory run <feature>` checks every ticket of the feature before it starts.
+- One branch per feature run, one per single-ticket run. Each review sees only its own ticket's commits: its base is where that ticket's implement began.
 - The factory never pushes, opens a pull request or merges.
 - What a factory run claims is checked: commits, clean tree, Checks.
 - One model choice, in `src/agent.ts`, for every stage.

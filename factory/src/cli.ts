@@ -17,6 +17,7 @@ import {
   runner,
   tildify,
 } from "./project.ts";
+import { run } from "./run.ts";
 import { implement, review } from "./stages.ts";
 
 const HELP = `factory: run the flow's unattended stages in Docker. Run from a project's root.
@@ -25,6 +26,11 @@ const HELP = `factory: run the flow's unattended stages in Docker. Run from a pr
   factory build                build the project's image from .sandcastle/Dockerfile
   factory doctor               is everything in place?
   factory smoke                one "Hello" run: image, key, Pi's output, the skills mount
+  factory run <feature>        implement, then review, every ticket of .scratch/<feature>/ in order, on agent/<feature>
+  factory run <ticket>         implement, then review, one ticket on agent/<feature>-<NN-slug>
+                               a rerun skips what is done and starts where it stopped
+
+  One stage alone (debugging, rerunning a stage):
   factory implement <ticket>   implement one ticket on agent/<feature>-<NN-slug>, from the current branch
   factory review <ticket>      review that ticket's branch, fix what needs no person, list what is left
   factory review --branch B --base REF --spec PATH --out FILE
@@ -51,6 +57,9 @@ switch (command) {
     break;
   case "smoke":
     await smoke();
+    break;
+  case "run":
+    await run(rest[0]);
     break;
   case "implement":
     await implement(rest[0]);

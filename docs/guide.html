@@ -241,23 +241,21 @@ footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule);
     <li><code>/to-tickets</code>: agree the breakdown and the blocking edges.</li>
     <li>Read the tickets and commit them.</li>
   </ol></div>
-  <div class="f"><h4>Unattended, one ticket at a time</h4><ol start="5">
-    <li>Pick a ticket whose blockers are all merged.</li>
-    <li><code>factory implement &lt;ticket&gt;</code>, in its own pane.</li>
-    <li><code>factory review &lt;ticket&gt;</code>.</li>
+  <div class="f"><h4>Unattended, the whole feature</h4><ol start="5">
+    <li><code>factory run .scratch/&lt;feature&gt;</code>, in its own pane. Every ticket in number order, implement then review, on one branch <code>agent/&lt;feature&gt;</code>. It stops at the first failure.</li>
   </ol></div>
-  <div class="y"><h4>You again</h4><ol start="8">
+  <div class="y"><h4>You again</h4><ol start="6">
     <li>Read the branch. Decide what it left for you.</li>
-    <li>Merge it yourself, or delete the branch and fix the ticket.</li>
-    <li>Back to step 5 with the next ticket.</li>
+    <li>Merge it yourself, or delete the branch, fix the tickets and run again.</li>
   </ol></div>
 </div>
 <pre><code>git add .scratch &amp;&amp; git commit -m "&lt;feature&gt;: spec and tickets"     # step 4
-factory implement .scratch/&lt;feature&gt;/issues/01-&lt;slug&gt;.md          # step 6
-factory review .scratch/&lt;feature&gt;/issues/01-&lt;slug&gt;.md             # step 7
-git log --oneline &lt;your branch&gt;..agent/&lt;feature&gt;-01-&lt;slug&gt;        # step 8
-git diff &lt;your branch&gt;...agent/&lt;feature&gt;-01-&lt;slug&gt;
-git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                # step 9</code></pre>
+factory run .scratch/&lt;feature&gt;                                    # step 5
+git log --oneline &lt;your branch&gt;..agent/&lt;feature&gt;                  # step 6
+git diff &lt;your branch&gt;...agent/&lt;feature&gt;
+git merge agent/&lt;feature&gt;                                          # step 7</code></pre>
+<p><b>One ticket instead:</b> <code>factory run .scratch/&lt;feature&gt;/issues/NN-&lt;slug&gt;.md</code> does the same for that ticket alone, on <code>agent/&lt;feature&gt;-NN-&lt;slug&gt;</code>, from your branch as it is. Merge what blocks it first.</p>
+<p><b>After a failure:</b> run the same <code>factory run</code> again. It skips tickets already done and retries the failed stage. If that stage left commits, it stops and prints the reset command instead, so nothing is dropped without you.</p>
 <p class="more">In Claude Code a skill is <code>/name</code>. In Pi it is <code>/skill:name</code>. The full walk-through: <a href="../factory/README.md">factory/README.md</a>, "A typical feature, from idea to merged".</p>
 
 <h3 id="entry">The entry points</h3>
@@ -271,12 +269,12 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
   <div class="card"><code>/to-tickets</code><dl>
     <dt>When</dt><dd>The spec is written, in the same conversation.</dd>
     <dt>You get</dt><dd>A proposed breakdown to agree, then <code>.scratch/&lt;feature&gt;/issues/01-….md</code>, <code>02-….md</code>, each with the tickets that block it.</dd></dl></div>
-  <div class="card"><code>factory implement &lt;ticket&gt;</code><dl>
-    <dt>When</dt><dd>The ticket is committed and what blocks it is merged.</dd>
-    <dt>You get</dt><dd>A branch <code>agent/&lt;feature&gt;-&lt;NN-slug&gt;</code> with commits, the Checks run, and <code>OK</code> or <code>FAILED</code> with the reason.</dd></dl></div>
-  <div class="card"><code>factory review &lt;ticket&gt;</code><dl>
-    <dt>When</dt><dd>Implement ended <code>OK</code>.</dd>
-    <dt>You get</dt><dd>Fixes committed on the same branch, the Checks run again, and a short list of what it left for you to decide.</dd></dl></div>
+  <div class="card"><code>factory run &lt;feature&gt;</code><dl>
+    <dt>When</dt><dd>The tickets are committed.</dd>
+    <dt>You get</dt><dd>One branch <code>agent/&lt;feature&gt;</code>: each ticket implemented, then reviewed with fixes committed, the Checks run after each stage, and one list of what the reviews left for you to decide. Or <code>FAILED</code> at the first ticket that failed.</dd></dl></div>
+  <div class="card"><code>factory run &lt;ticket&gt;</code><dl>
+    <dt>When</dt><dd>A targeted change, or redoing one ticket. What blocks it is merged.</dd>
+    <dt>You get</dt><dd>The same for that one ticket, on <code>agent/&lt;feature&gt;-&lt;NN-slug&gt;</code>. <code>factory implement</code> and <code>factory review</code> run one stage alone, for debugging.</dd></dl></div>
   <div class="card"><code>/test-skill &lt;name&gt; &lt;complaint&gt;</code><dl>
     <dt>When</dt><dd>A skill did the wrong thing at the keyboard.</dd>
     <dt>You get</dt><dd>An expectation drafted from the complaint, shown failing, then one change to the skill, kept only if the numbers say so.</dd></dl></div>
@@ -289,7 +287,7 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
 <div class="tw"><table>
 <tr><th>What went wrong</th><th>Do</th></tr>
 <tr><td>A skill at the keyboard misbehaved (grill, spec, tickets)</td><td class="w"><code>/test-skill &lt;name&gt; &lt;the complaint&gt;</code></td></tr>
-<tr><td>A factory run failed (no commit, a Check failing)</td><td>Read what it printed. A review also writes its log to <code>.sandcastle/logs/</code>. Rerun once. If it fails again, the ticket is probably too big or unclear: split or rewrite it.</td></tr>
+<tr><td>A factory run failed (no commit, a Check failing)</td><td>Read what it printed. A review also writes its log to <code>.sandcastle/logs/</code>. Run the same <code>factory run</code> again once, after the reset it prints if it prints one. If it fails again, the ticket is probably too big or unclear: split or rewrite it.</td></tr>
 <tr><td>The implementer or reviewer did the wrong thing, again</td><td>Turn it into a bench case in the project, then change the prompt in <code>~/dotfiles/factory/prompts/</code> (<a href="#x-bench">part 6</a>).</td></tr>
 </table></div>
 
@@ -297,7 +295,7 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
 <ul>
   <li>The tickets: <code>.scratch/&lt;feature&gt;/issues/</code>.</li>
   <li>The branches: <code>git branch --list 'agent/*'</code>.</li>
-  <li>One record per ticket: <code>.sandcastle/runs/</code>.</li>
+  <li>One record per ticket: <code>.sandcastle/runs/</code>. It names the branch the ticket ran on, <code>agent/&lt;feature&gt;</code> or its own.</li>
 </ul>
 
 <h3 id="onboard">Onboarding an existing project</h3>
@@ -437,7 +435,7 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
 <div class="tool" id="t-factory">
 <h3>The factory</h3>
 <h4>What it is</h4><p>One command that runs a stage on a ticket in a disposable Docker container: the runner. One copy in dotfiles. Each project keeps only its image, its settings and its key.</p>
-<h4>What it's for</h4><p>Implementing and reviewing a ticket while you are not there. It starts where <code>to-tickets</code> stops and ends at a branch for you to read.</p>
+<h4>What it's for</h4><p>Implementing and reviewing a feature's tickets, or one ticket, while you are not there. It starts where <code>to-tickets</code> stops and ends at a branch for you to read.</p>
 <h4>How to drive it</h4>
 <div class="tw"><table>
 <tr><th>Command</th><th>What it does</th></tr>
@@ -445,10 +443,12 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
 <tr><td><code>factory build</code></td><td>Builds the project's image. Again after changing the Dockerfile</td></tr>
 <tr><td><code>factory doctor</code></td><td>Docker running, image built, key present, <code>factory.json</code> valid, skills mount found, working tree clean</td></tr>
 <tr><td><code>factory smoke</code></td><td>One "Hello" run: proves the image, the key and that Pi's output is read</td></tr>
-<tr><td><code>factory implement &lt;ticket&gt;</code></td><td>Implements one ticket on <code>agent/&lt;feature&gt;-&lt;NN-slug&gt;</code>, from the current branch. Then the Checks, and the record in <code>.sandcastle/runs/</code></td></tr>
-<tr><td><code>factory review &lt;ticket&gt;</code></td><td>Reviews that ticket's branch against the ticket. Fixes what needs no person's decision, commits each fix, then the Checks. Prints what it left for you</td></tr>
+<tr><td><code>factory run &lt;feature&gt;</code></td><td>Implements, then reviews, every ticket of <code>.scratch/&lt;feature&gt;/issues/</code> in number order, on one branch <code>agent/&lt;feature&gt;</code> from the current branch. Skips tickets already done; stops at the first failure</td></tr>
+<tr><td><code>factory run &lt;ticket&gt;</code></td><td>Implements, then reviews, one ticket on <code>agent/&lt;feature&gt;-&lt;NN-slug&gt;</code>, from the current branch. Skips a stage already done</td></tr>
+<tr><td><code>factory implement &lt;ticket&gt;</code></td><td>One stage: implements one ticket on <code>agent/&lt;feature&gt;-&lt;NN-slug&gt;</code>, from the current branch. Then the Checks, and the record in <code>.sandcastle/runs/</code></td></tr>
+<tr><td><code>factory review &lt;ticket&gt;</code></td><td>One stage: reviews that ticket's branch against the ticket. Fixes what needs no person's decision, commits each fix, then the Checks. Prints what it left for you</td></tr>
 </table></div>
-<p>Run from the project's root. Not built yet: <code>factory run &lt;feature&gt;</code> and <code>factory status &lt;feature&gt;</code>.</p>
+<p>Run from the project's root. Not built yet: <code>factory status &lt;feature&gt;</code>.</p>
 <h4>What the runner sees</h4>
 <ul>
   <li><b>The ticket's branch</b>, as a git worktree mounted into the container. The rest of your checkout is not mounted.</li>
@@ -460,11 +460,12 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
 <h4>The rules</h4>
 <ul>
   <li>A ticket must be committed before a factory run.</li>
+  <li>One branch per feature run, one per single-ticket run. Each review sees only its own ticket's commits.</li>
   <li>The factory never pushes, never opens a pull request and never merges.</li>
   <li>One model choice for every stage, in <code>src/agent.ts</code>.</li>
 </ul>
 <h4>Where it lives</h4><p><code>~/dotfiles/factory/</code>, and the command <code>~/dotfiles/scripts/.local/bin/factory</code>. In a project: <code>.sandcastle/</code>.</p>
-<h4>Status</h4><p><span class="status">Implement and review proven on one ticket</span> <span class="status wait">Implement writes no log file yet</span></p>
+<h4>Status</h4><p><span class="status">Implement and review proven on one ticket</span> <span class="status wait"><code>factory run</code> not yet run on a real ticket</span> <span class="status wait">Implement writes no log file yet</span></p>
 <p class="more">Read more: <a href="../factory/README.md">factory/README.md</a>.</p>
 </div>
 
@@ -722,7 +723,7 @@ git merge agent/&lt;feature&gt;-01-&lt;slug&gt;                                #
 <dl id="glist"></dl>
 </section>
 
-<footer>Checked against <code>~/dotfiles</code> at <code>25f8329</code> and the plan on 2026-11-20.</footer>
+<footer>Checked against <code>~/dotfiles</code> at <code>455db56</code> plus <code>factory run</code>, and the plan on 2026-11-20.</footer>
 </main>
 </div>
 <div id="tip" role="tooltip"></div>
