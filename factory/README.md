@@ -62,7 +62,7 @@ factory/
     cli.ts                   # the `factory` command
     agent.ts                 # the one place that picks the model for every stage: pi("anthropic/claude-opus-5-5")
     implement.ts             # the implement stage
-    review.ts                # the review stage: one run of the code-review skill (approach C)
+    review.ts                # the review stage: one run of the code-review skill
     findings.ts              # the review's structured answer
   prompts/
     implement.md             # the implementer's prompt; no project facts in it
@@ -148,8 +148,6 @@ What a stage must show before it counts as done, checked by the factory, not tak
 ## Testing the factory: the bench
 
 The bench tests a stage the way the lab tests a skill: saved cases with a planted defect, Checks and a judged line or two, `--runs N`. The bench tool is the lab's (`bench`, in `pi/.pi/agent/extensions/lab/`); its cases live in the project whose code they use (`.sandcastle/bench/<stage>/<case>/`). Change a prompt here, rerun the bench there, keep the change only if nothing dropped.
-
-The course project's bench also keeps review approach B (two reviewers, one per axis, then a fix run) as an experiment, for a test on a larger change. B is never part of this factory. If it wins, it replaces the review stage here. There, `bench review <case>` runs the shipped review (`factory review`) and `bench review <case> -- b` runs B, through `.sandcastle/bench/review/stage.sh`.
 
 ## Rules
 
