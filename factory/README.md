@@ -17,6 +17,38 @@ grill → spec → tickets                     implement → review             
 
 The factory starts where `to-tickets` stops: committed ticket files under `.scratch/`. It ends at a branch with commits and a short list of what it left for you. It never pushes, never opens a pull request and never merges.
 
+## A typical feature, from idea to merged
+
+Start here when you don't know where to begin. The project is already set up (see "Setting up a project" below if not).
+
+**At the keyboard, in one conversation:**
+
+1. `/grill-with-docs <the idea>` (or `/grilling` in a project with no glossary). Answer until it has nothing left to ask.
+2. `/to-spec`. Agree the seams it asks about. It writes `.scratch/<feature>/spec.md`.
+3. `/to-tickets`. Agree the breakdown and the blocking edges. It writes `.scratch/<feature>/issues/01-….md`, `02-….md`, …
+4. Read the tickets, then commit them: `git add .scratch && git commit -m "<feature>: spec and tickets"`.
+
+**Unattended, one ticket at a time, from your working branch:**
+
+5. Pick a ticket whose "Blocked by" tickets are all merged. Start with `01`.
+6. `factory implement .scratch/<feature>/issues/01-<slug>.md`, in its own pane. It streams what the agent does; a run takes a few minutes. It ends with `OK` and the branch name, or `FAILED` and why.
+7. `factory review .scratch/<feature>/issues/01-<slug>.md`. It reviews that branch, commits its fixes and prints what it left for you to decide.
+8. Read the branch: `git log --oneline <your branch>..agent/<feature>-01-<slug>` and `git diff <your branch>...agent/<feature>-01-<slug>`. Decide what it left for you.
+9. Merge it yourself (`git merge agent/<feature>-01-<slug>`), or delete the branch and fix the ticket.
+10. Back to step 5 with the next ticket. A ticket starts from your branch as it is, so merge what blocks it first.
+
+*(later)* `factory run <feature>` does steps 5–7 for every ticket and stops where it needs you; step 8 stays yours.
+
+**Where am I?** Until `factory status` exists: the tickets in `.scratch/<feature>/issues/`, the branches in `git branch --list 'agent/*'`, and one record per ticket in `.sandcastle/runs/`.
+
+**When something goes wrong:**
+
+| What went wrong | Do |
+|---|---|
+| A skill at the keyboard misbehaved (grill, spec, tickets) | `/test-skill <name> <the complaint>` (`agents/README.md`) |
+| A factory run failed (no commit, a Check failing) | Read its log in `.sandcastle/logs/`. Rerun once; if it fails again, the ticket is probably too big or unclear: split or rewrite it |
+| The implementer or reviewer did the wrong thing, again | Turn it into a bench case in the project, then change the prompt here (see "Testing the factory") |
+
 ## Layout
 
 ### Here, in dotfiles
