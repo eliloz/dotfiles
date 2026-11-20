@@ -52,7 +52,7 @@ The skills here:
 | `setup-matt-pocock-skills` | Sets a project up for the others (tracker, labels, glossary pointer). Name kept: three skills call it by name |
 | `test-skill` | Mine. Tests the others |
 
-All but `test-skill` are Matt Pocock's, from the course project at b84ff53. The first commit adds them unchanged and each proven sentence is its own commit after that, so `git log -p agents/.agents/skills/<name>` shows every way mine differ from his. Matt's other skills stay in the course project. Left out on purpose: `implement-spec` (it needs Claude Code's sub-agents, and the factory is meant to replace it) and `pr` (this flow opens no pull requests).
+All but `test-skill` are Matt Pocock's, from the course project at b84ff53. His licence (MIT) and what came from where: [THIRD-PARTY.md](THIRD-PARTY.md). The first commit adds them unchanged and each proven sentence is its own commit after that, so `git log -p agents/.agents/skills/<name>` shows every way mine differ from his. Matt's other skills stay in the course project. Left out on purpose: `implement-spec` (it needs Claude Code's sub-agents, and the factory is meant to replace it) and `pr` (this flow opens no pull requests).
 
 Skill groupings that feel off, to revisit when forking a skill: `~/code/ai/software-factories/COUPLING-WATCHLIST.md`.
 
