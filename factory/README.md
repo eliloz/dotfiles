@@ -134,7 +134,7 @@ What a stage must show before it counts as done, checked by the factory, not tak
 
 1. The project has `AGENTS.md` and a local tracker (`agents/README.md`, "Onboarding a new project"). Its tickets come from `to-tickets`.
 2. `factory init`. Edit `.sandcastle/Dockerfile` for the project's toolchain and `.sandcastle/factory.json` for its setup and Checks.
-3. Put the facts the implementer needs in `AGENTS.md` (where behaviour goes, how tests are written), not in the prompts.
+3. Put the facts the runner needs in `AGENTS.md`, not in the prompts: where behaviour goes, how tests are written, and where the coding standards are. The reviewer finds standards with step 3 of `code-review` (it searches for them, and always takes `CODING_STANDARDS.md` or `CONTRIBUTING.md` when present); a line in `AGENTS.md` naming the file makes it certain.
 4. Create `.sandcastle/.env` with a separate, spend-capped key.
 5. Docker Desktop running. `factory build`, `factory doctor`, `factory smoke`.
 6. The first real ticket: `factory implement <ticket>`, read the branch, `factory review <ticket>`, read it again.
