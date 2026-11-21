@@ -1,1 +1,0 @@
-{ "compilerOptions": { "target": "ES2023", "module": "NodeNext", "moduleResolution": "NodeNext", "strict": true, "skipLibCheck": true, "noEmit": true, "allowImportingTsExtensions": true, "types": ["node"] }, "include": [".pi/agent/extensions/*.ts", ".pi/agent/extensions/*/*.ts"] }

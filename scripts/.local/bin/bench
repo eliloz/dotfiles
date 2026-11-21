@@ -1,3 +1,0 @@
-#!/bin/sh
-# bench: test a headless factory stage against saved cases (see `bench --help`). Shares the lab's engine.
-exec node "$HOME/.pi/agent/extensions/lab/bench.mjs" "$@"

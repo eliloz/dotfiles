@@ -7,7 +7,7 @@ The expectations format, the commands and the flags are in `lab --help` (section
 - Baseline or full batch: `lab test skill <name> --runs 5 --behind`. Prints the tally and one report path per run.
 - Trial run: `lab test skill <name> --behind --wait`.
 - Reports: `.agents/skill-tests/<name>/reports/<time>-<lab>.md`, or `lab report skill <name>` for the latest. Each names the skill copy tested ("Skill text:": real path, repository commit, hash), then holds the Tester's verdicts with quotes, the lab's Check results, then "What each pane showed": Main's whole transcript. The Tester never reads the report.
-- Versions for `BASELINE.md`: `pi --version`; lab commit `git -C ~/dotfiles log -1 --format=%h -- pi/.pi/agent/extensions/lab`; model from `lab doctor` ("default model", or `$LAB_MODEL`); skill path, commit and hash from the report's "Skill text:" line. The hash by hand: `shasum -a 256 <SKILL.md> | cut -c1-12`. It is what decides whether a skill changed: a skill that moved between repositories unchanged keeps its hash, and its baseline stays current.
+- Versions for `BASELINE.md`: `pi --version`; lab commit `git -C "$(dirname "$(realpath ~/.local/bin/lab)")/../lab" log -1 --format=%h -- .` (the lab is in the agent-tools repo, wherever `~/.local/bin/lab` links to); model from `lab doctor` ("default model", or `$LAB_MODEL`); skill path, commit and hash from the report's "Skill text:" line. The hash by hand: `shasum -a 256 <SKILL.md> | cut -c1-12`. It is what decides whether a skill changed: a skill that moved between repositories unchanged keeps its hash, and its baseline stays current.
 
 ## Stop at the first failure
 
@@ -54,7 +54,7 @@ The score to beat. Written by hand from lab runs; the lab never changes this fil
 
 | Date | Model (Main and Tester) | Pi | Lab | Project commit | Skill |
 |---|---|---|---|---|---|
-| <date> | `<provider/id>` | <version> | `~/dotfiles` <hash> | `<hash>` | <Matt's text, unchanged / plus <change> (`~/dotfiles` <hash>)> |
+| <date> | `<provider/id>` | <version> | `agent-tools` <hash> | `<hash>` | <Matt's text, unchanged / plus <change> (`~/dotfiles` <hash>)> |
 
 Skill text: `<real path of SKILL.md>`, SHA-256 `<12 hex digits>`, `<repository>` <commit>.
 

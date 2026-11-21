@@ -8,7 +8,7 @@ Twelve skills under `.agents/skills/` are Matt Pocock's, from
 `writing-for-agents` and `setup-matt-pocock-skills`. They were added unchanged in commit b604669.
 My changes are separate commits after b604669: `git log -p agents/.agents/skills/<name>`.
 
-The lab's local tracker template (`pi/.pi/agent/extensions/lab/tracker/issue-tracker-local.md`) is his too.
+The lab's local tracker template (`lab/tracker/issue-tracker-local.md` in `~/code/agent-tools`) is his too.
 
 ```
 MIT License

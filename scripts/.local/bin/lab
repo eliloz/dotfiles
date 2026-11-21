@@ -1,3 +1,0 @@
-#!/bin/sh
-# lab: the Herdr Lab command (see `lab --help`). Same engine as /lab in Pi.
-exec node "$HOME/.pi/agent/extensions/lab/cli.mjs" "$@"

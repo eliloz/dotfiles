@@ -8,9 +8,8 @@ Other docs:
 - `docs/python.md`: how uv, venvs and site-packages work
 - `nvim/.config/nvim/README.md`: Neovim config layout and plugins
 - `scripts/README.md`: the `dev` and `box` scripts (tmux sessions; Claude in sbx sandboxes)
-- `agents/README.md`: working with coding agents: the flow's skills, testing them in the lab, sidecars, onboarding a project
-- `factory/README.md`: the unattended stages (implement, review) in Docker, and the bench that tests them
-- `docs/guide.html`: the browsable guide to all of the above. Open it in a browser
+- `agents/README.md`: working with coding agents: the flow's skills, how to test them, sidecars, onboarding a project
+- The agent tools (the factory, the lab and bench, and the Pi commands `/split`, `/sidecar`, `/lab`) are programs, not config, and live in their own repo, `~/code/agent-tools`. Its README covers setup; its `docs/guide.html` is the browsable guide to the skills and the tools
 
 ---
 
@@ -26,6 +25,7 @@ Every tool has exactly one owner. If you're not sure where something belongs, us
 | **Mason** (in Neovim) | Editor tooling only: LSP servers, formatters, linters | `nvim/.config/nvim/lua/eli/plugins/mason.lua` | `~/.local/share/nvim/mason` |
 | **rustup** | The Rust toolchain (rustc, cargo, clippy, rustfmt, and rust-analyzer as a component, so it always matches the compiler). `~/.cargo/bin` holds rustup's proxies, which forward to the active toolchain. Rust CLIs (cargo-expand, wr) are `cargo:` entries in the mise config, not plain `cargo install` | none: its own installer | `~/.rustup`, `~/.cargo` |
 | **elan** | The Lean toolchain | none: its own installer | `~/.elan` |
+| **agent-tools** (its own repo) | The `factory`, `lab` and `bench` commands, and the Pi extensions `/split`, `/sidecar`, `/lab` | none here: `~/code/agent-tools`, set up by its `./install` | linked into `~/.local/bin`; registered with `pi install` |
 | **herdr-core** | The server behind the Herdr app (brew cask `herdr-app`), and its `hc` CLI. The app installs it on first launch; `hc update` updates it | none: its own installer | `~/.local/share/herdr-core`, linked as `~/.local/bin/hc` |
 
 ## Installing something new
@@ -125,9 +125,9 @@ All three are in the `zsh/` stow package.
 
 | File | Runs for | Holds |
 |---|---|---|
-| `.zshenv` | every zsh, including scripts | rustup's `~/.cargo/env`, so `cargo` works even in non-interactive shells |
+| `.zshenv` | every zsh, including scripts | rustup's `~/.cargo/env`, so `cargo` works even in non-interactive shells; `~/.local/bin` on PATH, so scripts and agent shells find `factory`, `lab`, `bench`, `dev` and `box` |
 | `.zprofile` | login shells (every Ghostty window and tmux pane) | `brew shellenv`, `HOMEBREW_BUNDLE_FILE` (so `brew bundle` finds this Brewfile from any directory), JetBrains Toolbox and elan on PATH |
-| `.zshrc` | interactive shells | `~/.local/bin` first on PATH, prompt, plugins, `mise activate` |
+| `.zshrc` | interactive shells | `~/.local/bin` moved to the front of PATH (uv's `python3` link there must win over any other), prompt, plugins, `mise activate` |
 
 **Machine-local settings** go in `~/.zshrc.local`. `.zshrc` sources it last, and it lives outside the repo (`.gitignore` also ignores `*.local` and `.env*` as a safety net). Use it for settings that aren't secret. **Secrets** belong in 1Password, not in plain-text files: keep a `.env.1password` file of `op://…` references and run commands with `op run --env-file=.env.1password -- <cmd>`, so a secret is fetched only for the command that needs it. Anything exported from a shell file reaches every program started from that shell, coding agents included.
 
@@ -139,14 +139,13 @@ Installers like to append lines to these files (rustup, JetBrains Toolbox, pipx)
 
 1. Install Homebrew, clone this repo to `~/dotfiles`.
 2. `brew bundle --file ~/dotfiles/Brewfile` (the shared list), then the machine's own list: `brew bundle --file ~/dotfiles/Brewfile.personal`, or `brew bundle --file ~/dotfiles/Brewfile.local` on a machine whose list should stay out of the repo (git ignores `*.local`; create the file there). After the first shell start, plain `brew bundle` means the shared list from any directory; the machine's own list always needs `--file`.
-3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty herdr-app scripts sbx pi agents` (every top-level directory except `docs/`). The repo's `.stowrc` passes `--no-folding`, so stow links individual files and never turns a whole directory like `~/.config/sbx` into a symlink into the repo. Otherwise anything a tool writes there (sbx's `credentials.yaml`) would land in the repo.
+3. `cd ~/dotfiles && stow zsh mise uv nvim tmux ghostty herdr-app scripts sbx agents` (every top-level directory except `docs/`). The repo's `.stowrc` passes `--no-folding`, so stow links individual files and never turns a whole directory like `~/.config/sbx` into a symlink into the repo. Otherwise anything a tool writes there (sbx's `credentials.yaml`) would land in the repo.
 4. Open a new shell (`mise activate` runs from `.zshrc`), then `mise install`. This installs global node, go, uv, pi, and any `pypi:` / `npm:` CLIs in the config.
 5. `uv python install --default 3.14` (global Python, and the base for Mason's pypi tools).
 6. Install rustup (https://rustup.rs), then `rustup component add rust-analyzer`, then `mise install` again so the `cargo:` CLIs (cargo-expand, and workshop-runner, which provides `wr`) build now that cargo exists. Install elan if needed.
 7. Open Herdr once (`open -a Herdr`). It installs herdr-core and links `hc` into `~/.local/bin`. Check with `hc server status`. Two of its files are tracked in `herdr-app/`: `settings.json` sets the terminal font to MesloLGS Nerd Font Mono, the same as Ghostty, so Nerd Font icons draw under the cursor and in selections; `keys.json` adds tmux-style `ctrl-a` prefix bindings next to Herdr's defaults. Herdr writes both files itself, so check `git diff` after changing settings or bindings in the app.
-8. pi: the `pi/` package links three extensions into `~/.pi/agent/extensions/`: `split/` (`/split`), `sidecar/` (`/sidecar`) and `lab/` (`/lab`, the same engine as the `lab` shell command from `scripts/`). What each does, and how a lab run uses Herdr: `agents/README.md`. pi finds them without any setting, and `/reload` picks up edits. They need `hc` and `herdr-app` on PATH (step 7). Only the extension folders are linked: `package.json`, `tsconfig.json` and `node_modules` are for typechecking (`cd ~/dotfiles/pi && npm install && npm run check`), and pi does not need them at runtime. `~/.pi/agent/settings.json` and `auth.json` are not tracked: pi rewrites the first, and the second holds credentials.
-   The lab: run `lab doctor` before a first run (from inside a git project; every line must show ✓). The first run caches its copy of Herdr.app in `~/.lab/app` (`lab clean` removes it). Each run spends tokens: the model is `--model`, else `$LAB_MODEL`, else your Pi default, so a small model is a good `LAB_MODEL`. Checked with Herdr 0.1.16, hc 0.1.21, Pi 1.5.2: recheck after upgrading any of them.
-9. agents: the `agents/` package holds the skills used in every project (the flow's twelve, and `test-skill`, which tests them in the lab). One copy each in `agents/.agents/skills/<name>/` (Pi reads `~/.agents/skills/`); `agents/.claude/skills/<name>/` holds relative links to the same files (Claude Code reads `~/.claude/skills/`). How to use and test them: `agents/README.md`. Testing needs the lab (step 8).
+8. agents: the `agents/` package holds the skills used in every project (the flow's twelve, and `test-skill`, which tests them in the lab). One copy each in `agents/.agents/skills/<name>/` (Pi reads `~/.agents/skills/`); `agents/.claude/skills/<name>/` holds relative links to the same files (Claude Code reads `~/.claude/skills/`). How to use and test them: `agents/README.md`. Testing needs the lab (step 9).
+9. The agent tools: `git clone <url> ~/code/agent-tools && cd ~/code/agent-tools && ./install`. That installs their dependencies, links `factory`, `lab` and `bench` into `~/.local/bin`, and registers the Pi extensions (`/split`, `/sidecar`, `/lab`) with `pi install`. They need `hc` and `herdr-app` on PATH (step 7), and the skills (step 8). Then `lab doctor` from inside a git project: every line must show ✓. The factory also needs Docker Desktop. `~/.pi/agent/settings.json` and `auth.json` are not tracked: pi rewrites the first, and the second holds credentials. Everything else about the tools: that repo's `README.md`.
 10. Open `nvim` once. mason-tool-installer installs everything in `ensure_installed` in the background. Check with `:Mason`.
 
 The order matters: Mason (step 10) needs node, go and python3 from steps 4 and 5 to already be there.

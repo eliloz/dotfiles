@@ -1,6 +1,6 @@
 # agents
 
-How I work with coding agents on this Mac: the skills I use in every project, the lab that tests them, and sidecars. One copy of each skill's text lives here. Each project keeps its own tests.
+How I work with coding agents on this Mac: the skills I use in every project, how they are tested, and sidecars. One copy of each skill's text lives here. Each project keeps its own tests. The programs (the lab, the bench, the factory, `/sidecar`, `/split`) are in their own repo, `~/code/agent-tools`.
 
 Words follow [GLOSSARY.md](GLOSSARY.md), in this folder: **Main**, **skill**, **sidecar**, **lab**, **expectation**, **baseline**, **Check**, **Tester**.
 
@@ -10,16 +10,17 @@ Words follow [GLOSSARY.md](GLOSSARY.md), in this folder: **Main**, **skill**, **
 |---|---|---|
 | The flow's skills | Prompts Main follows: grill → spec → tickets → implement → review, then retro | `agents/.agents/skills/` (here) |
 | `test-skill` | A skill that tests another skill: it picks the lab runs for you | `agents/.agents/skills/test-skill/` |
-| The lab | An isolated second workspace where a skill or sidecar is tested from outside. `lab` in a terminal, `/lab` in Pi | `pi/.pi/agent/extensions/lab/`, `scripts/.local/bin/lab` |
-| `/sidecar` | Opens a sidecar: a model in its own pane that watches Main and shows findings | `pi/.pi/agent/extensions/sidecar/` |
-| `/split` | Branches Main into a new pane, for a tangent (see "`/split`" below) | `pi/.pi/agent/extensions/split/` |
+| The lab | An isolated second workspace where a skill or sidecar is tested from outside. `lab` in a terminal, `/lab` in Pi | `~/code/agent-tools/lab/` |
+| `/sidecar` | Opens a sidecar: a model in its own pane that watches Main and shows findings | `~/code/agent-tools/extensions/sidecar/` |
+| `/split` | Branches Main into a new pane, for a tangent | `~/code/agent-tools/extensions/split/` |
+| The factory and the bench | The unattended stages (implement, review) in Docker, and what tests them | `~/code/agent-tools/factory/`, `lab/` |
 
 ## What it needs
 
 - **macOS, the Herdr app and Pi.** The lab opens its own copy of Herdr ("Herdr Lab": separate window, core and socket), so your daily Herdr is never touched. Without Herdr there is no lab. `/sidecar` and `/split` also open Herdr panes.
 - The skills themselves work in Pi and in Claude Code. Only testing them needs the lab.
 - **`lab doctor`** checks all of it (Herdr, `hc`, the Herdr Lab copy, Pi, the model logins, `/split`, `/sidecar`). Every line must show ✓. Run it from inside a git project.
-- Installing Herdr, Pi and the stow packages: the main `README.md`, "Setting up a new machine".
+- Installing Herdr, Pi, the stow packages and the tools: the main `README.md`, "Setting up a new machine".
 
 ## Layout
 
@@ -149,57 +150,17 @@ After changing the `/sidecar` code or the lab's sidecar-test code, run the Criti
 
 Not built. In the mega course a widget is a pane that gathers a status with a script, has a small model judge it, and shows a short list (to-dos, issues). There is no `/widget` command here and the lab has no widget test. Building one would mean:
 
-1. A `/widget` command beside `/sidecar` in `pi/.pi/agent/extensions/`, with a widget saved in the project as `widgets/<name>/` (instructions and expectations), like a sidecar.
+1. A `/widget` command beside `/sidecar` in `~/code/agent-tools/extensions/`, with a widget saved in the project as `widgets/<name>/` (instructions and expectations), like a sidecar.
 2. A third kind of lab test beside the sidecar test and the skill test, so its expectations can be run.
 3. A **Widget** entry in `GLOSSARY.md` first.
 
 Build it when a real need shows up, not before.
 
-## `/split`
+## The lab, the bench, `/split`
 
-A Pi command. `/split ["name"]` branches Main into a new Herdr pane to its right. You pick the message to branch at, or the whole conversation. The branch's agent waits for your next message. Main is never changed.
+They are programs, in `~/code/agent-tools`. What a lab run does, how it uses Herdr, the lab's commands and how I normally use them: `~/code/agent-tools/lab/README.md`. `/split` and `/sidecar`: `~/code/agent-tools/README.md`, "The Pi commands". Here the lab is mostly reached through `test-skill` (above).
 
-- **When:** a tangent, most often during grilling: a side question worth following without derailing the round Main is on.
-- `/split "Calendar idea"` names the branch. `/split --help` prints the guide and adds nothing to the conversation.
-- The branch is told that Main is still running and may be changing the same files.
-- It needs a Herdr pane (`hc` and `herdr-app` on PATH). If the pane cannot be opened, the branch is still saved and the error shows the `pi --session` command that opens it.
-
-## The lab
-
-What one lab run does: opens the Herdr Lab window, copies the project's tracked files (no `.git`, no secrets, no `.agents/`, no `AGENTS.md` except in a skill test, no expectations or baselines), starts guest Main in the copy with only the thing under test, and starts a Tester that types each Do line and judges from the screen alone. Then it writes a report and closes everything.
-
-### How a lab run uses Herdr
-
-- **A second Herdr, never yours.** The lab runs "Herdr Lab": a copy of Herdr.app with its own bundle id (`dev.herdr.lab`), its own core (`HC_SESSION`), socket and app home. Everything the lab sends goes to that socket, so your daily Herdr, its windows and its panes are never addressed. The copy is cached in `~/.lab/app`.
-- **Its own Pi profile.** A scratch profile that links only `auth.json`, your model logins. Lab panes load `/split`, `/sidecar` and whatever `LAB_EXTENSIONS` names, nothing else of yours.
-- **The panes.** A skill test has two: guest Main, and the Tester to its right. A sidecar test has three: guest Main, the sidecar that Main opens with `/sidecar`, and the Tester below.
-- **How the Tester drives them.** The Tester is a headless Pi (`pi -p --no-extensions`, only the `lab_*` tools) started in an empty folder, so it cannot read the project or the text under test. It types with `hc send`, presses keys with `hc keys`, reads a pane's screen with `hc read` and takes a picture of the window with `herdr-app shot`.
-- **The quote rule.** Every Expect or Never verdict must quote the screen word for word. A quote that was not on a screen the Tester was shown is rejected. See, Absent and Check lines are checked by the lab itself and override the Tester.
-- **Teardown.** After the report the lab removes its window, core, terminals and `~/.lab/<id>`, and lists anything left. A test started with `/lab` in Pi leaves its lab open until `/lab stop`; so does `--keep`. `lab stop all` closes every lab and `lab leftovers` shows anything still running or on disk.
-
-### How I normally use it
-
-- **Through `test-skill`.** The commands below are for doing a step by hand.
-- **From the project's root**, always. A file must be committed, or at least `git add`ed, before a lab sees it.
-- **`--behind`**, so the lab window opens behind my windows.
-- **Five runs, never one.** One pass says little. When the bar is 5/5 on one expectation, run one lab at a time and stop at the first failure (the loop is in `test-skill`'s `REFERENCE.md`).
-- **Read Main's transcript in the report, not only the tally.** A 5/5 can hide a weakness, and a failure can be a timeout.
-- **Never press ctrl+o in a lab's Main pane.** It expands the skill's text on screen, where the Tester can read it.
-- Every run spends model tokens. `LAB_MODEL` sets a cheaper default model.
-
-| Command | What it does |
-|---|---|
-| `lab doctor` | Is the lab ready? |
-| `lab test skill <name> --runs 5 --behind` | Five runs of one skill against its expectations, with a tally |
-| `lab test skill <name> --behind --wait` | One trial run |
-| `lab report skill <name>` | The latest report |
-| `lab test <Sidecar> --runs 5 --behind` | The same for a sidecar |
-| `lab test "<steps>"` or `lab test FILE` | A scenario: free-form steps, no expectations file |
-| `lab stop [ID\|all]`, `lab list`, `lab leftovers` | Close labs; see what is running or left on disk |
-| `lab selftest --behind` | The lab's own check. A failure means the lab is broken, not a skill |
-| `lab --help` | Everything, including the expectations format |
-
-After changing the lab's code: `cd ~/dotfiles/pi/.pi/agent/extensions/lab && node --test test/*.test.mjs`, then `lab selftest --behind`. After adding or renaming a file under `pi/`: `cd ~/dotfiles && stow -R pi`.
+The short form, from a project's root: `lab doctor`, then `lab test skill <name> --runs 5 --behind`, then `lab report skill <name>`. A file must be committed, or at least `git add`ed, before a lab sees it. Every run spends model tokens; `LAB_MODEL` sets a cheaper default model.
 
 ## Rules
 
@@ -207,6 +168,6 @@ After changing the lab's code: `cd ~/dotfiles/pi/.pi/agent/extensions/lab && nod
 - One change at a time, measured over 5 runs before it is kept.
 - The Tester never sees the text of what it tests.
 - Commit locally; push when I choose.
-- When this file changes, update the matching part of `docs/guide.html` and its footer.
+- When this file changes, update the matching part of `~/code/agent-tools/docs/guide.html` and its footer.
 
-The unattended part (implement and review runs in Docker, and their bench) is the factory: [../factory/README.md](../factory/README.md).
+The unattended part (implement and review runs in Docker, and their bench) is the factory: `~/code/agent-tools/factory/README.md`.

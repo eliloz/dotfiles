@@ -23,7 +23,9 @@ From the dotfiles root:
 stow --no-folding scripts sbx
 ```
 
-`--no-folding` makes Stow link each file individually instead of symlinking a missing `~/.local/bin` or `~/.config/sbx` into this repo, which would make other tools write into your dotfiles (sbx keeps `credentials.yaml` in `~/.config/sbx`). After adding a new script, re-stow with `stow -R --no-folding scripts`. `~/.local/bin` is on `PATH` through `zsh/.zshrc`.
+`--no-folding` makes Stow link each file individually instead of symlinking a missing `~/.local/bin` or `~/.config/sbx` into this repo, which would make other tools write into your dotfiles (sbx keeps `credentials.yaml` in `~/.config/sbx`). After adding a new script, re-stow with `stow -R --no-folding scripts`. `~/.local/bin` is on `PATH` through `zsh/.zshenv` (every shell) and `zsh/.zshrc` (first on PATH in interactive shells).
+
+The `factory`, `lab` and `bench` commands also live in `~/.local/bin`, but they are not from this package: they link into `~/code/agent-tools/bin/`, set up by that repo's `./install`.
 
 ## dev
 

@@ -7,7 +7,8 @@ fi
 
 # ---------- PATH ----------
 
-# User scripts (stowed from dotfiles/scripts) and uv tools. typeset -U drops duplicate entries.
+# User scripts (stowed from dotfiles/scripts), the agent tools' commands and uv tools, first on PATH.
+# .zshenv adds the folder for every shell; this moves it to the front. typeset -U drops duplicate entries.
 typeset -U path
 path=("$HOME/.local/bin" $path)
 
